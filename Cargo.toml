@@ -1,0 +1,7 @@
+[package]
+name = "contours2heightmap"
+version = "0.0.1"
+edition = "2024"
+
+[dependencies]
+imageproc = { version = "0.25.0", features = ["display-window"] }
