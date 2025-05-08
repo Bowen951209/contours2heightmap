@@ -1,11 +1,11 @@
 mod contour_processing;
 mod font;
+mod display;
 
-use crate::contour_processing::ContourLine;
-use ab_glyph::{Font, PxScale};
+use crate::display::display_contour_lines;
 use imageproc::contours::Contour;
 use imageproc::drawing::Canvas;
-use imageproc::image::{DynamicImage, ImageReader, Rgba};
+use imageproc::image::ImageReader;
 
 fn main() {
     // Read command line arguments
@@ -38,49 +38,4 @@ fn main() {
     // Display the contour lines
     let font = font::load_sans();
     display_contour_lines(&contour_lines, "Contour Lines", w, h, &font);
-}
-
-fn display_img(img: &DynamicImage, title: &str, w: u32, h: u32) {
-    let rgb_img = img
-        .as_rgb8()
-        .expect("Failed to convert image to RGB format");
-    imageproc::window::display_image(title, rgb_img, w, h);
-}
-
-fn display_contour_lines<T: Font>(
-    contour_lines: &Vec<ContourLine<u32>>,
-    title: &str,
-    w: u32,
-    h: u32,
-    font: &T,
-) {
-    let mut img = DynamicImage::new_rgb8(w, h);
-
-    for contour_line in contour_lines {
-        // Draw all contour line points
-        let points = &contour_line.contour().points;
-        for point in points {
-            img.draw_pixel(point.x, point.y, Rgba::from([255, 0, 0, 255]));
-        }
-
-        // Mark the first point of the contour line with height value
-        let point0 = points[0];
-        let scale = PxScale::from(24.0);
-        let text = contour_line
-            .height()
-            .expect("Contour line does not have height")
-            .to_string();
-
-        imageproc::drawing::draw_text_mut(
-            &mut img,
-            Rgba::from([0, 255, 0, 255]),
-            point0.x as i32,
-            point0.y as i32,
-            scale,
-            font,
-            text.as_str(),
-        );
-    }
-
-    display_img(&img, title, w, h);
 }
