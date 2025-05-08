@@ -1,4 +1,4 @@
-use crate::contour_processing::ContourLine;
+use crate::contour_line::ContourLine;
 use ab_glyph::{Font, PxScale, ScaleFont};
 use imageproc::definitions::Clamp;
 use imageproc::drawing::Canvas;

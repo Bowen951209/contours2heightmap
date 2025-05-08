@@ -1,6 +1,7 @@
-mod contour_processing;
+mod contour_line;
 mod font;
 mod display;
+mod heigtmap;
 
 use crate::display::display_contour_lines;
 use imageproc::contours::Contour;
@@ -29,10 +30,10 @@ fn main() {
     let mut contours: Vec<Contour<u32>> = imageproc::contours::find_contours(&grayscale);
 
     // find_contours finds outer and inner contours. We only retain outers as representation
-    contour_processing::retain_outer(&mut contours);
+    contour_line::retain_outer(&mut contours);
 
     // Convert Contours to ContourLines. The heights of each contour line are then set
-    let contour_lines = contour_processing::to_contour_lines(contours);
+    let contour_lines = contour_line::to_contour_lines(contours);
     println!("Contour lines count = {}", contour_lines.len());
 
     // Display the contour lines
