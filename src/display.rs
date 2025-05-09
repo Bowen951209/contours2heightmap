@@ -65,15 +65,7 @@ pub fn draw_text_on_center<C>(
     let x = x - text_width as i32 / 2;
     let y = y - text_height as i32 / 2;
 
-    imageproc::drawing::draw_text_mut(
-        canvas,
-        color,
-        x,
-        y,
-        scale,
-        font,
-        &text,
-    );
+    imageproc::drawing::draw_text_mut(canvas, color, x, y, scale, font, &text);
 }
 
 pub fn measure_text(scale: impl Into<PxScale>, font: &impl Font, text: &str) -> (f32, f32) {
