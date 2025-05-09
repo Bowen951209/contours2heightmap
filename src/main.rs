@@ -1,7 +1,6 @@
 mod contour_line;
-mod font;
 mod display;
-mod heigtmap;
+mod font;
 
 use crate::display::display_contour_lines;
 use imageproc::contours::Contour;
