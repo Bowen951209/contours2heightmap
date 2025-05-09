@@ -1,11 +1,14 @@
 use imageproc::{
-    drawing::{Canvas, draw_cross_mut},
+    drawing::Canvas,
     image::{GrayImage, Luma},
     point::Point,
 };
-use std::{cmp::min, collections::VecDeque};
+use std::{
+    cmp::{max, min},
+    collections::VecDeque,
+};
 
-use crate::contour_line::{ContourLine, find_contour_line_interval, get_bbox};
+use crate::contour_line::{ContourLine, find_contour_line_height_interval_gray, get_bbox};
 
 pub struct HeightMap {
     pub img: GrayImage,
@@ -25,19 +28,12 @@ impl HeightMap {
 
                 let bbox = get_bbox(contour_lines);
                 let (left, right) =
-                    find_contour_line_interval(Point::new(x, y), contour_lines, &bbox);
-                let height = if left.is_none() || right.is_none() {
-                    1
-                } else {
-                    min(left.unwrap().height(), right.unwrap().height()).unwrap()
-                };
-
-                let gray = height_to_u8(height, 200);
+                    find_contour_line_height_interval_gray(Point::new(x, y), &self.img, &bbox);
+                let gray = max(min(left, right), 1); // 1 for flood fill checker
                 flood_fill_gray(&mut self.img, &mut filled, x, y, 0, gray);
 
                 // temp debug
-                println!("filled {}m", height);
-                draw_cross_mut(&mut self.img, Luma([255]), x as i32, y as i32);
+                println!("filled gray {}", gray);
             }
         }
     }

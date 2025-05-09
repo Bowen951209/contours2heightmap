@@ -2,6 +2,7 @@ use std::u32;
 
 use imageproc::{
     contours::{BorderType, Contour},
+    image::GrayImage,
     point::Point,
 };
 
@@ -81,40 +82,17 @@ pub fn get_bbox(contour_lines: &[ContourLine<u32>]) -> Bbox {
     bbox
 }
 
-pub fn find_contour_line_interval<'a>(
+pub fn find_contour_line_height_interval_gray(
     point: Point<u32>,
-    contour_lines: &'a [ContourLine<u32>],
+    contour_line_img: &GrayImage,
     bbox: &Bbox,
-) -> (Option<&'a ContourLine<u32>>, Option<&'a ContourLine<u32>>) {
-    let mut left_contour_line = None;
-    println!("point = {:?}", point);
-    'outer: for finder_x in (bbox.min.x..point.x).rev() {
-        println!("finder_x = {}", finder_x);
-        for cl in contour_lines {
-            for p in &cl.contour.points {
-                if *p == Point::new(finder_x, point.y) {
-                    left_contour_line = Some(cl);
-                    break 'outer;
-                }
-            }
-        }
-    }
+) -> (u8, u8) {
+    let left_height =
+        find_first_contour_line_height_gray(point, contour_line_img, (bbox.min.x..point.x).rev());
+    let right_height =
+        find_first_contour_line_height_gray(point, contour_line_img, point.x..bbox.max.x);
 
-    // Find right
-    let mut right_contour_line = None;
-    'outer: for finder_x in point.x..bbox.max.x {
-        println!("finder_x = {}", finder_x);
-        for cl in contour_lines {
-            for p in &cl.contour.points {
-                if *p == Point::new(finder_x, point.y) {
-                    right_contour_line = Some(cl);
-                    break 'outer;
-                }
-            }
-        }
-    }
-
-    (left_contour_line, right_contour_line)
+    (left_height, right_height)
 }
 
 fn set_heights<T>(contour_lines: &mut [ContourLine<T>]) {
@@ -128,4 +106,19 @@ fn set_heights<T>(contour_lines: &mut [ContourLine<T>]) {
         height += GAP;
         contour_line.height = Some(height);
     }
+}
+
+fn find_first_contour_line_height_gray<I: Iterator<Item = u32>>(
+    point: Point<u32>,
+    contour_line_img: &GrayImage,
+    range: I,
+) -> u8 {
+    for x in range {
+        let val = contour_line_img.get_pixel(x, point.y)[0];
+        if val != 0 {
+            return val;
+        }
+    }
+
+    0
 }
