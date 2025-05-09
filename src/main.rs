@@ -1,11 +1,15 @@
 mod contour_line;
 mod display;
 mod font;
+mod heigtmap;
 
 use crate::display::display_contour_lines;
+use font::load_sans;
+use heigtmap::HeightMap;
 use imageproc::contours::Contour;
 use imageproc::drawing::Canvas;
 use imageproc::image::ImageReader;
+use imageproc::window::display_image;
 
 fn main() {
     // Read command line arguments
@@ -35,7 +39,10 @@ fn main() {
     let contour_lines = contour_line::to_contour_lines(contours);
     println!("Contour lines count = {}", contour_lines.len());
 
-    // Display the contour lines
-    let font = font::load_sans();
-    display_contour_lines(&contour_lines, "Contour Lines", w, h, &font);
+    let mut flat_heightmap = HeightMap::new(contour_lines, w as usize, h as usize);
+    flat_heightmap.flat_fill();
+
+    let font = load_sans();
+    display_image("HeightMap", &flat_heightmap.to_gray_image(), w, h);
+    display_contour_lines(&flat_heightmap.contour_lines, "Contour", w, h, &font);
 }
