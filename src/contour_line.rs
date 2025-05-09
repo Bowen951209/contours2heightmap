@@ -2,7 +2,6 @@ use std::u32;
 
 use imageproc::{
     contours::{BorderType, Contour},
-    image::GrayImage,
     point::Point,
 };
 
@@ -82,15 +81,18 @@ pub fn get_bbox(contour_lines: &[ContourLine<u32>]) -> Bbox {
     bbox
 }
 
-pub fn find_contour_line_height_interval_gray(
-    point: Point<u32>,
-    contour_line_img: &GrayImage,
+pub fn find_contour_line_height_interval(
+    point: Point<usize>,
+    line_height_matrix: &[Vec<Option<i32>>],
     bbox: &Bbox,
-) -> (u8, u8) {
-    let left_height =
-        find_first_contour_line_height_gray(point, contour_line_img, (bbox.min.x..point.x).rev());
+) -> (Option<i32>, Option<i32>) {
+    let left_height = find_first_contour_line_height(
+        point,
+        line_height_matrix,
+        (bbox.min.x as usize..point.x).rev(),
+    );
     let right_height =
-        find_first_contour_line_height_gray(point, contour_line_img, point.x..bbox.max.x);
+        find_first_contour_line_height(point, line_height_matrix, point.x..bbox.max.x as usize);
 
     (left_height, right_height)
 }
@@ -108,17 +110,17 @@ fn set_heights<T>(contour_lines: &mut [ContourLine<T>]) {
     }
 }
 
-fn find_first_contour_line_height_gray<I: Iterator<Item = u32>>(
-    point: Point<u32>,
-    contour_line_img: &GrayImage,
+fn find_first_contour_line_height<I: Iterator<Item = usize>>(
+    point: Point<usize>,
+    line_height_matrix: &[Vec<Option<i32>>],
     range: I,
-) -> u8 {
+) -> Option<i32> {
     for x in range {
-        let val = contour_line_img.get_pixel(x, point.y)[0];
-        if val != 0 {
+        let val = line_height_matrix[point.y as usize][x as usize];
+        if val != None {
             return val;
         }
     }
 
-    0
+    None
 }

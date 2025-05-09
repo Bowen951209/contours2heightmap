@@ -8,7 +8,7 @@ use font::load_sans;
 use heigtmap::HeightMap;
 use imageproc::contours::Contour;
 use imageproc::drawing::Canvas;
-use imageproc::image::{GrayImage, ImageReader};
+use imageproc::image::ImageReader;
 use imageproc::window::display_image;
 
 fn main() {
@@ -39,12 +39,10 @@ fn main() {
     let contour_lines = contour_line::to_contour_lines(contours);
     println!("Contour lines count = {}", contour_lines.len());
 
-    let mut flat_heightmap = HeightMap {
-        img: GrayImage::new(w, h),
-    };
-    flat_heightmap.flat_fill(&contour_lines);
+    let mut flat_heightmap = HeightMap::new(contour_lines, w as usize, h as usize);
+    flat_heightmap.flat_fill();
 
     let font = load_sans();
-    display_image("HeightMap", &flat_heightmap.img, w, h);
-    display_contour_lines(&contour_lines, "Contour", w, h, &font);
+    display_image("HeightMap", &flat_heightmap.to_gray_image(), w, h);
+    display_contour_lines(&flat_heightmap.contour_lines, "Contour", w, h, &font);
 }

@@ -3,93 +3,112 @@ use imageproc::{
     image::{GrayImage, Luma},
     point::Point,
 };
-use std::{
-    cmp::{max, min},
-    collections::VecDeque,
-};
+use std::{cmp::min, collections::VecDeque, vec};
 
-use crate::contour_line::{ContourLine, find_contour_line_height_interval_gray, get_bbox};
+use crate::contour_line::{ContourLine, find_contour_line_height_interval, get_bbox};
 
 pub struct HeightMap {
-    pub img: GrayImage,
+    pub data: Vec<Vec<Option<i32>>>,
+    pub contour_lines: Vec<ContourLine<u32>>,
 }
 
 impl HeightMap {
-    pub fn flat_fill(&mut self, contour_lines: &[ContourLine<u32>]) {
-        let (w, h) = self.img.dimensions();
+    pub fn new(contour_lines: Vec<ContourLine<u32>>, w: usize, h: usize) -> Self {
+        Self {
+            data: vec![vec![None; w]; h],
+            contour_lines,
+        }
+    }
+
+    pub fn to_gray_image(&self) -> GrayImage {
+        let w = self.data[0].len();
+        let h = self.data.len();
+        let mut image = GrayImage::new(w as u32, h as u32);
+        for y in 0..h {
+            for x in 0..w {
+                let val = self.data[y][x].unwrap();
+                let gray = height_to_u8(val, 200);
+                image.draw_pixel(x as u32, y as u32, Luma([gray]));
+            }
+        }
+
+        image
+    }
+}
+
+impl HeightMap {
+    pub fn flat_fill(&mut self) {
+        let w = self.data[0].len();
+        let h = self.data.len();
         let mut filled = vec![vec![false; w as usize]; h as usize];
-        draw_contour_lines_gray(&mut self.img, &mut filled, contour_lines);
+        self.draw_contour_lines(&mut filled);
 
         for y in 0..h {
             for x in 0..w {
-                if filled[y as usize][x as usize] || self.img.get_pixel(x, y)[0] != 0 {
+                if filled[y as usize][x as usize] || self.data[y][x] != None {
                     continue;
                 }
 
-                let bbox = get_bbox(contour_lines);
+                let bbox = get_bbox(&self.contour_lines);
                 let (left, right) =
-                    find_contour_line_height_interval_gray(Point::new(x, y), &self.img, &bbox);
-                let gray = max(min(left, right), 1); // 1 for flood fill checker
-                flood_fill_gray(&mut self.img, &mut filled, x, y, 0, gray);
+                    find_contour_line_height_interval(Point::new(x, y), &self.data, &bbox);
+                let height = min(left, right).unwrap_or(0);
+
+                self.flood_fill(x, y, height, &mut filled);
 
                 // temp debug
-                println!("filled gray {}", gray);
+                println!("filled height {}", height);
             }
         }
     }
-}
 
-fn draw_contour_lines_gray(
-    img: &mut GrayImage,
-    filled: &mut [Vec<bool>],
-    contour_lines: &[ContourLine<u32>],
-) {
-    for cl in contour_lines {
-        for p in &cl.contour().points {
-            let color = height_to_u8(cl.height().unwrap(), 200);
-            img.draw_pixel(p.x, p.y, Luma([color]));
-            filled[p.y as usize][p.x as usize] = true;
+    pub fn flood_fill(
+        &mut self,
+        x: usize,
+        y: usize,
+        replacement_value: i32,
+        filled: &mut [Vec<bool>],
+    ) {
+        if !self.data[y][x].is_none() {
+            return;
+        }
+
+        let w = self.data[0].len();
+        let h = self.data.len();
+
+        let mut queue = VecDeque::new();
+        queue.push_back((x, y));
+
+        while let Some((cx, cy)) = queue.pop_front() {
+            let current = self.data[cy][cx];
+            if !current.is_none() {
+                continue;
+            }
+
+            self.data[cy][cx] = Some(replacement_value);
+            filled[cy as usize][cx as usize] = true;
+
+            if cx > 0 {
+                queue.push_back((cx - 1, cy));
+            }
+            if cx + 1 < w {
+                queue.push_back((cx + 1, cy));
+            }
+            if cy > 0 {
+                queue.push_back((cx, cy - 1));
+            }
+            if cy + 1 < h {
+                queue.push_back((cx, cy + 1));
+            }
         }
     }
-}
 
-fn flood_fill_gray(
-    img: &mut GrayImage,
-    filled: &mut [Vec<bool>],
-    x: u32,
-    y: u32,
-    target_value: u8,
-    replacement_value: u8,
-) {
-    if target_value == replacement_value {
-        return;
-    }
-
-    let (width, height) = img.dimensions();
-
-    let mut queue = VecDeque::new();
-    queue.push_back((x, y));
-
-    while let Some((cx, cy)) = queue.pop_front() {
-        let current = img.get_pixel(cx, cy)[0];
-        if current != target_value {
-            continue;
-        }
-
-        img.put_pixel(cx, cy, Luma([replacement_value]));
-        filled[cy as usize][cx as usize] = true;
-
-        if cx > 0 {
-            queue.push_back((cx - 1, cy));
-        }
-        if cx + 1 < width {
-            queue.push_back((cx + 1, cy));
-        }
-        if cy > 0 {
-            queue.push_back((cx, cy - 1));
-        }
-        if cy + 1 < height {
-            queue.push_back((cx, cy + 1));
+    fn draw_contour_lines(&mut self, filled: &mut [Vec<bool>]) {
+        for cl in &self.contour_lines {
+            for p in &cl.contour().points {
+                self.data[p.y as usize][p.x as usize] = Some(cl.height().unwrap());
+                filled[p.y as usize][p.x as usize] = true;
+            }
         }
     }
 }
