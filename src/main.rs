@@ -1,13 +1,11 @@
 mod contour_line;
-mod display;
+mod draw;
 mod font;
 mod heigtmap;
 
-use crate::display::display_contour_lines;
 use font::load_sans;
 use heigtmap::HeightMap;
 use imageproc::contours::Contour;
-use imageproc::drawing::Canvas;
 use imageproc::image::ImageReader;
 use imageproc::window::display_image;
 
@@ -26,7 +24,7 @@ fn main() {
         .decode()
         .expect("Failed to decode image");
 
-    let (w, h) = dyn_img.dimensions();
+    let (w, h) = (dyn_img.width(), dyn_img.height());
 
     // To grayscale, and then we can find contours
     let grayscale = dyn_img.to_luma8();
@@ -43,6 +41,9 @@ fn main() {
     flat_heightmap.flat_fill();
 
     let font = load_sans();
-    display_image("HeightMap", &flat_heightmap.to_gray_image(), w, h);
-    display_contour_lines(&flat_heightmap.contour_lines, "Contour", w, h, &font);
+    let heightmap_gray_image = flat_heightmap.to_gray_image();
+    let contour_lines_image =
+        contour_line::get_contour_lines_image(&flat_heightmap.contour_lines, &font, w, h);
+    display_image("HeightMap", &heightmap_gray_image, w, h);
+    display_image("Contour Lines", &contour_lines_image, w, h);
 }
