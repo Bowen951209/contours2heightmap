@@ -3,6 +3,7 @@ use imageproc::{
     image::{GrayImage, Luma},
     point::Point,
 };
+use indicatif::{ProgressBar, ProgressStyle};
 use std::{collections::VecDeque, io::Write, vec};
 
 use crate::contour_line::ContourLine;
@@ -82,6 +83,13 @@ impl HeightMap {
     fn linear_fill(&mut self) {
         let w = self.data[0].len();
         let h = self.data.len();
+        let elapsed = std::time::Instant::now().elapsed();
+        let pb = ProgressBar::new((w * h) as u64).with_elapsed(elapsed);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{percent:.2}% {bar:20.cyan/blue} {pos}/{len} [{elapsed_precise}] {msg}")
+                .unwrap(),
+        );
 
         for y in 0..h {
             for x in 0..w {
@@ -91,18 +99,12 @@ impl HeightMap {
 
                 let height = self.linear_at(&Point::new(x, y));
                 self.data[y][x] = Some(height);
-
-                // temp debug
-                print!(
-                    "\r({}%) filled {}m at ({}, {})",
-                    (y * w + x) as f32 / (w * h) as f32 * 100.0,
-                    height,
-                    x,
-                    y
-                );
-                std::io::stdout().flush().unwrap();
+                pb.set_position((y * w + x) as u64);
+                pb.set_message(format!("linear fill at ({}, {})", x, y));
             }
         }
+
+        pb.finish_with_message("linear fill done");
     }
 
     fn linear_at(&self, point: &Point<usize>) -> i32 {

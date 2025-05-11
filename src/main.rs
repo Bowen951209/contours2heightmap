@@ -20,7 +20,8 @@ fn main() {
         contour_line::get_contour_lines_from(&filepath);
     println!("Contour lines count = {}", contour_lines.len());
 
-    let heightmap = HeightMap::new_flat(contour_lines, image_width as usize, image_heihgt as usize);
+    let heightmap =
+        HeightMap::new_linear(contour_lines, image_width as usize, image_heihgt as usize);
 
     let font = load_sans();
     let heightmap_gray_image = heightmap.to_gray_image();
