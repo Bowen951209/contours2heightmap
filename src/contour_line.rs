@@ -2,7 +2,7 @@ use std::u32;
 
 use ab_glyph::{Font, PxScale};
 use imageproc::{
-    contours::{BorderType, Contour}, drawing::Canvas, image::{Rgb, RgbImage}, point::Point
+    contours::{BorderType, Contour}, drawing::Canvas, image::{Rgb, RgbImage}
 };
 
 use crate::draw::draw_text_on_center;
@@ -72,24 +72,6 @@ pub fn to_contour_lines<T>(contours: Vec<Contour<T>>) -> Vec<ContourLine<T>> {
     contour_lines
 }
 
-pub fn find_contour_line_height_interval(
-    point: Point<usize>,
-    line_height_matrix: &[Vec<Option<i32>>],
-    x_range: (usize, usize)
-) -> (Option<i32>, Option<i32>) {
-    let (min, max) = x_range;
-
-    let left_height = find_first_contour_line_height(
-        point,
-        line_height_matrix,
-        (min..point.x).rev(),
-    );
-    let right_height =
-        find_first_contour_line_height(point, line_height_matrix, point.x..max as usize);
-
-    (left_height, right_height)
-}
-
 fn set_heights<T>(contour_lines: &mut [ContourLine<T>]) {
     let mut sorted: Vec<&mut ContourLine<T>> = contour_lines.iter_mut().collect();
     sorted.sort_by(|a, b| a.contour.parent.unwrap().cmp(&b.contour.parent.unwrap()));
@@ -101,19 +83,4 @@ fn set_heights<T>(contour_lines: &mut [ContourLine<T>]) {
         height += GAP;
         contour_line.height = Some(height);
     }
-}
-
-fn find_first_contour_line_height<I: Iterator<Item = usize>>(
-    point: Point<usize>,
-    line_height_matrix: &[Vec<Option<i32>>],
-    range: I,
-) -> Option<i32> {
-    for x in range {
-        let val = line_height_matrix[point.y as usize][x as usize];
-        if val != None {
-            return val;
-        }
-    }
-
-    None
 }

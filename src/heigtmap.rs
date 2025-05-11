@@ -5,7 +5,7 @@ use imageproc::{
 };
 use std::{cmp::min, collections::VecDeque, vec};
 
-use crate::contour_line::{ContourLine, find_contour_line_height_interval};
+use crate::contour_line::ContourLine;
 
 pub struct HeightMap {
     pub data: Vec<Vec<Option<i32>>>,
@@ -37,10 +37,14 @@ impl HeightMap {
     }
 
     /// Create a new `HeightMap` with contour lines drawn on it. It simply calls `draw_contour_lines` to set the points and height value to `data` for each contour line.
-    fn new_with_contour_lines_drawn(contour_lines: Vec<ContourLine<u32>>, w: usize, h: usize) -> Self {
+    fn new_with_contour_lines_drawn(
+        contour_lines: Vec<ContourLine<u32>>,
+        w: usize,
+        h: usize,
+    ) -> Self {
         let mut heightmap = Self {
             data: vec![vec![None; w]; h],
-            contour_lines
+            contour_lines,
         };
 
         heightmap.draw_contour_lines();
@@ -59,8 +63,7 @@ impl HeightMap {
                     continue;
                 }
 
-                let (left, right) =
-                    find_contour_line_height_interval(Point::new(x, y), &self.data, (0, w));
+                let (left, right) = find_height_interval(Point::new(x, y), &self.data);
                 let height = min(left, right).unwrap_or(0);
 
                 self.flood_fill(x, y, height);
@@ -113,6 +116,41 @@ impl HeightMap {
             }
         }
     }
+}
+
+/// Find the contour line height interval where `point` is located.
+/// * `point` is the point to check.
+/// * `line_height_data` is the data directly after `draw_contour_lines` call.
+fn find_height_interval(
+    point: Point<usize>,
+    line_height_data: &[Vec<Option<i32>>],
+) -> (Option<i32>, Option<i32>) {
+    let (min, max) = (0, line_height_data[0].len());
+
+    let left_height = find_first_contour_line_height(point, line_height_data, (min..point.x).rev());
+    let right_height =
+        find_first_contour_line_height(point, line_height_data, point.x..max as usize);
+
+    (left_height, right_height)
+}
+
+/// Start from `point` and find the first encounter contour line's height in the given range.
+/// * `point` is the point to check.
+/// * `line_height_data` is the data directly after `draw_contour_lines` call.
+/// * `range` is the range to check.
+fn find_first_contour_line_height<I: Iterator<Item = usize>>(
+    point: Point<usize>,
+    line_height_data: &[Vec<Option<i32>>],
+    range: I,
+) -> Option<i32> {
+    for x in range {
+        let val = line_height_data[point.y as usize][x as usize];
+        if val != None {
+            return val;
+        }
+    }
+
+    None
 }
 
 fn height_to_u8(h: i32, max_h: i32) -> u8 {
