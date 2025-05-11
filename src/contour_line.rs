@@ -1,14 +1,10 @@
 use std::u32;
 
-use ab_glyph::{Font, PxScale};
 use imageproc::{
     contours::{BorderType, Contour},
-    drawing::Canvas,
-    image::{self, Rgb, RgbImage},
+    image::{self},
     point::Point,
 };
-
-use crate::draw::draw_text_on_center;
 
 pub struct ContourLine {
     contour: Contour<usize>,
@@ -99,43 +95,6 @@ pub fn get_contour_lines_from(file_path: &str) -> (Vec<ContourLine>, u32, u32) {
 
     // Convert Contours to ContourLines. The heights of each contour line are then set
     (to_contour_lines(contours), w, h)
-}
-
-pub fn get_contour_lines_image<T: Font>(
-    contour_lines: &[ContourLine],
-    font: &T,
-    w: u32,
-    h: u32,
-) -> RgbImage {
-    let mut image = RgbImage::new(w, h);
-
-    for contour_line in contour_lines {
-        // Draw all contour line points
-        let points = &contour_line.contour().points;
-        for point in points {
-            image.draw_pixel(point.x as u32, point.y as u32, Rgb::from([255, 0, 0]));
-        }
-
-        // Mark the first point of the contour line with height value
-        let point0 = points[0];
-        let scale = PxScale::from(24.0);
-        let text = contour_line
-            .height()
-            .expect("Contour line does not have height")
-            .to_string();
-
-        draw_text_on_center(
-            &mut image,
-            Rgb::from([0, 255, 0]),
-            point0.x as i32,
-            point0.y as i32,
-            scale,
-            font,
-            &text,
-        );
-    }
-
-    image
 }
 
 fn sort_by_parent(contour_lines: &mut [ContourLine]) {

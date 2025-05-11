@@ -20,31 +20,12 @@ fn main() {
         contour_line::get_contour_lines_from(&filepath);
     println!("Contour lines count = {}", contour_lines.len());
 
-    let flat_heightmap =
-        HeightMap::new_linear(contour_lines, image_width as usize, image_heihgt as usize);
+    let heightmap = HeightMap::new_flat(contour_lines, image_width as usize, image_heihgt as usize);
 
     let font = load_sans();
-    let heightmap_gray_image = flat_heightmap.to_gray_image();
-    let contour_lines_image = contour_line::get_contour_lines_image(
-        &flat_heightmap.contour_lines,
-        &font,
-        image_width,
-        image_heihgt,
-    );
+    let heightmap_gray_image = heightmap.to_gray_image();
+    let mut canvas = draw::gray_to_rgb(&heightmap_gray_image);
 
-    heightmap_gray_image.save("heightmap.png").unwrap();
-    println!("Saved heightmap to heightmap.png");
-
-    display_image(
-        "HeightMap",
-        &heightmap_gray_image,
-        image_width,
-        image_heihgt,
-    );
-    display_image(
-        "Contour Lines",
-        &contour_lines_image,
-        image_width,
-        image_heihgt,
-    );
+    draw::draw_contour_lines_with_text(&mut canvas, &heightmap.contour_lines, &font);
+    display_image("Height Map", &canvas, image_width, image_heihgt);
 }
