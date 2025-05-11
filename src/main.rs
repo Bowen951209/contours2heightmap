@@ -5,7 +5,7 @@ mod heigtmap;
 
 use font::load_sans;
 use heigtmap::HeightMap;
-use imageproc::contours::Contour;
+use imageproc::contours::{self, Contour};
 use imageproc::image::ImageReader;
 use imageproc::window::display_image;
 
@@ -28,7 +28,7 @@ fn main() {
 
     // To grayscale, and then we can find contours
     let grayscale = dyn_img.to_luma8();
-    let mut contours: Vec<Contour<u32>> = imageproc::contours::find_contours(&grayscale);
+    let mut contours: Vec<Contour<u32>> = contours::find_contours(&grayscale);
 
     // find_contours finds outer and inner contours. We only retain outers as representation
     contour_line::retain_outer(&mut contours);
