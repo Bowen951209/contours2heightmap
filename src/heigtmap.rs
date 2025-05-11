@@ -5,7 +5,7 @@ use imageproc::{
 };
 use std::{cmp::min, collections::VecDeque, vec};
 
-use crate::contour_line::{ContourLine, find_contour_line_height_interval, get_bbox};
+use crate::contour_line::{ContourLine, find_contour_line_height_interval};
 
 pub struct HeightMap {
     pub data: Vec<Vec<Option<i32>>>,
@@ -54,9 +54,8 @@ impl HeightMap {
                     continue;
                 }
 
-                let bbox = get_bbox(&self.contour_lines);
                 let (left, right) =
-                    find_contour_line_height_interval(Point::new(x, y), &self.data, &bbox);
+                    find_contour_line_height_interval(Point::new(x, y), &self.data, (0, w));
                 let height = min(left, right).unwrap_or(0);
 
                 self.flood_fill(x, y, height, &mut filled);

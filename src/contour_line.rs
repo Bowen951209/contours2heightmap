@@ -22,26 +22,6 @@ impl<T> ContourLine<T> {
     }
 }
 
-pub struct Bbox {
-    min: Point<u32>,
-    max: Point<u32>,
-}
-
-impl Bbox {
-    pub fn new() -> Self {
-        Self {
-            min: Point {
-                x: u32::MAX,
-                y: u32::MAX,
-            },
-            max: Point {
-                x: u32::MIN,
-                y: u32::MIN,
-            },
-        }
-    }
-}
-
 pub fn get_contour_lines_image<T: Font>(contour_lines: &[ContourLine<u32>], font: &T, w: u32, h: u32) -> RgbImage {
     let mut image = RgbImage::new(w, h);
 
@@ -92,41 +72,20 @@ pub fn to_contour_lines<T>(contours: Vec<Contour<T>>) -> Vec<ContourLine<T>> {
     contour_lines
 }
 
-pub fn get_bbox(contour_lines: &[ContourLine<u32>]) -> Bbox {
-    let mut bbox = Bbox::new();
-
-    for cl in contour_lines {
-        for p in &cl.contour.points {
-            if p.x < bbox.min.x {
-                bbox.min.x = p.x;
-            }
-            if p.x > bbox.max.x {
-                bbox.max.x = p.x;
-            }
-            if p.y < bbox.min.y {
-                bbox.min.y = p.y;
-            }
-            if p.y > bbox.max.y {
-                bbox.max.y = p.y;
-            }
-        }
-    }
-
-    bbox
-}
-
 pub fn find_contour_line_height_interval(
     point: Point<usize>,
     line_height_matrix: &[Vec<Option<i32>>],
-    bbox: &Bbox,
+    x_range: (usize, usize)
 ) -> (Option<i32>, Option<i32>) {
+    let (min, max) = x_range;
+
     let left_height = find_first_contour_line_height(
         point,
         line_height_matrix,
-        (bbox.min.x as usize..point.x).rev(),
+        (min..point.x).rev(),
     );
     let right_height =
-        find_first_contour_line_height(point, line_height_matrix, point.x..bbox.max.x as usize);
+        find_first_contour_line_height(point, line_height_matrix, point.x..max as usize);
 
     (left_height, right_height)
 }
