@@ -46,7 +46,7 @@ impl HeightMap {
         let w = self.data[0].len();
         let h = self.data.len();
         let mut filled = vec![vec![false; w as usize]; h as usize];
-        self.draw_contour_lines(&mut filled);
+        self.draw_contour_lines();
 
         for y in 0..h {
             for x in 0..w {
@@ -108,11 +108,10 @@ impl HeightMap {
         }
     }
 
-    fn draw_contour_lines(&mut self, filled: &mut [Vec<bool>]) {
+    fn draw_contour_lines(&mut self) {
         for cl in &self.contour_lines {
             for p in &cl.contour().points {
                 self.data[p.y as usize][p.x as usize] = Some(cl.height().unwrap());
-                filled[p.y as usize][p.x as usize] = true;
             }
         }
     }
