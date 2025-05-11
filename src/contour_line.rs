@@ -2,18 +2,57 @@ use std::u32;
 
 use ab_glyph::{Font, PxScale};
 use imageproc::{
-    contours::{BorderType, Contour}, drawing::Canvas, image::{Rgb, RgbImage}
+    contours::{BorderType, Contour},
+    drawing::Canvas,
+    image::{self, Rgb, RgbImage},
+    point::Point,
 };
 
 use crate::draw::draw_text_on_center;
 
-pub struct ContourLine<T> {
-    contour: Contour<T>,
+pub struct ContourLine {
+    contour: Contour<usize>,
     height: Option<i32>,
+    max_x: usize,
 }
 
-impl<T> ContourLine<T> {
-    pub fn contour(&self) -> &Contour<T> {
+impl ContourLine {
+    pub fn new(contour: Contour<usize>) -> Self {
+        let max_x = contour.points.iter().map(|p| p.x).max().unwrap();
+        Self {
+            contour,
+            height: None,
+            max_x,
+        }
+    }
+
+    pub fn is_point_inside(&self, point: &Point<usize>) -> bool {
+        let mut hit_count: u32 = 0;
+        let mut last_hit_point: Option<&Point<usize>> = None;
+        for x in point.x..=self.max_x {
+            for i in 0..self.contour.points.len() {
+                let p = &self.contour.points[i];
+
+                if p.x == x && p.y == point.y {
+                    match last_hit_point {
+                        Some(_) => {
+                            if p.x != last_hit_point.unwrap().x + 1 {
+                                hit_count += 1;
+                            }
+                        }
+                        None => {
+                            hit_count += 1;
+                        }
+                    }
+                    last_hit_point = Some(p);
+                }
+            }
+        }
+
+        hit_count % 2 == 1
+    }
+
+    pub fn contour(&self) -> &Contour<usize> {
         &self.contour
     }
 
@@ -22,14 +61,35 @@ impl<T> ContourLine<T> {
     }
 }
 
-pub fn get_contour_lines_image<T: Font>(contour_lines: &[ContourLine<u32>], font: &T, w: u32, h: u32) -> RgbImage {
+pub fn get_contour_lines_from(file_path: &str) -> (Vec<ContourLine>, u32, u32) {
+    // Load the image
+    let dyn_img = image::open(file_path).expect("Failed to open image file");
+    let (w, h) = (dyn_img.width(), dyn_img.height());
+
+    // To grayscale, and then we can find contours
+    let grayscale = dyn_img.to_luma8();
+    let mut contours: Vec<Contour<usize>> = imageproc::contours::find_contours(&grayscale);
+
+    // find_contours finds outer and inner contours. We only retain outers as representation
+    retain_outer(&mut contours);
+
+    // Convert Contours to ContourLines. The heights of each contour line are then set
+    (to_contour_lines(contours), w, h)
+}
+
+pub fn get_contour_lines_image<T: Font>(
+    contour_lines: &[ContourLine],
+    font: &T,
+    w: u32,
+    h: u32,
+) -> RgbImage {
     let mut image = RgbImage::new(w, h);
 
     for contour_line in contour_lines {
         // Draw all contour line points
         let points = &contour_line.contour().points;
         for point in points {
-            image.draw_pixel(point.x, point.y, Rgb::from([255, 0, 0]));
+            image.draw_pixel(point.x as u32, point.y as u32, Rgb::from([255, 0, 0]));
         }
 
         // Mark the first point of the contour line with height value
@@ -54,33 +114,77 @@ pub fn get_contour_lines_image<T: Font>(contour_lines: &[ContourLine<u32>], font
     image
 }
 
-pub fn retain_outer<T>(contours: &mut Vec<Contour<T>>) {
+fn sort_by_parent(contour_lines: &mut [ContourLine]) {
+    contour_lines.sort_by(|a, b| a.contour.parent.unwrap().cmp(&b.contour.parent.unwrap()));
+}
+
+fn retain_outer<T>(contours: &mut Vec<Contour<T>>) {
     contours.retain(|c| c.border_type == BorderType::Outer);
 }
 
-pub fn to_contour_lines<T>(contours: Vec<Contour<T>>) -> Vec<ContourLine<T>> {
+fn to_contour_lines(contours: Vec<Contour<usize>>) -> Vec<ContourLine> {
     let mut contour_lines = Vec::new();
     for contour in contours {
-        let contour_line = ContourLine {
-            contour,
-            height: None,
-        };
+        let contour_line = ContourLine::new(contour);
         contour_lines.push(contour_line);
     }
 
+    sort_by_parent(&mut contour_lines);
     set_heights(&mut contour_lines);
     contour_lines
 }
 
-fn set_heights<T>(contour_lines: &mut [ContourLine<T>]) {
-    let mut sorted: Vec<&mut ContourLine<T>> = contour_lines.iter_mut().collect();
-    sorted.sort_by(|a, b| a.contour.parent.unwrap().cmp(&b.contour.parent.unwrap()));
-
+fn set_heights(sorted_contour_lines: &mut [ContourLine]) {
     let mut height = 0;
     const GAP: i32 = 50;
 
-    for contour_line in sorted {
+    for contour_line in sorted_contour_lines {
         height += GAP;
         contour_line.height = Some(height);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{env, path::Path};
+
+    use super::get_contour_lines_from;
+    use imageproc::point::Point;
+
+    #[test]
+    fn points_inside_simple_contour_lines() {
+        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/contour_lines.png");
+        let (contour_lines, _, _) = get_contour_lines_from(file_path.to_str().unwrap());
+
+        assert!(contour_lines[0].is_point_inside(&Point::new(94, 23)));
+
+        assert!(contour_lines[0].is_point_inside(&Point::new(117, 29)));
+        assert!(contour_lines[1].is_point_inside(&Point::new(117, 29)));
+
+        assert!(contour_lines[0].is_point_inside(&Point::new(109, 55)));
+        assert!(contour_lines[1].is_point_inside(&Point::new(109, 55)));
+        assert!(contour_lines[2].is_point_inside(&Point::new(109, 55)));
+
+        assert!(contour_lines[0].is_point_inside(&Point::new(151, 111)));
+        assert!(contour_lines[1].is_point_inside(&Point::new(151, 111)));
+        assert!(contour_lines[2].is_point_inside(&Point::new(151, 111)));
+        assert!(contour_lines[3].is_point_inside(&Point::new(151, 111)));
+    }
+
+    #[test]
+    fn extremum_points_outside_simple_contour_lines() {
+        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/contour_lines.png");
+        let (contour_lines, _, _) = get_contour_lines_from(file_path.to_str().unwrap());
+
+        assert!(!contour_lines[0].is_point_inside(&Point::new(8, 15)));
+        assert!(!contour_lines[0].is_point_inside(&Point::new(63, 63)));
+    }
+
+    #[test]
+    fn four_contours_lines_in_simple_contour_lines() {
+        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/contour_lines.png");
+        let (contour_lines, _, _) = get_contour_lines_from(file_path.to_str().unwrap());
+
+        assert_eq!(contour_lines.len(), 4);
     }
 }
