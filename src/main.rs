@@ -13,8 +13,8 @@ fn main() {
     // Read command line arguments
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
-        println!("Please provide a file path as an argument.");
-        return;
+        eprintln!("Please provide a file path as an argument.");
+        std::process::exit(1);
     }
     let filepath = &args[1];
 
@@ -37,8 +37,7 @@ fn main() {
     let contour_lines = contour_line::to_contour_lines(contours);
     println!("Contour lines count = {}", contour_lines.len());
 
-    let mut flat_heightmap = HeightMap::new(contour_lines, w as usize, h as usize);
-    flat_heightmap.flat_fill();
+    let flat_heightmap = HeightMap::new_flat(contour_lines, w as usize, h as usize);
 
     let font = load_sans();
     let heightmap_gray_image = flat_heightmap.to_gray_image();

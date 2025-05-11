@@ -13,11 +13,16 @@ pub struct HeightMap {
 }
 
 impl HeightMap {
-    pub fn new(contour_lines: Vec<ContourLine<u32>>, w: usize, h: usize) -> Self {
-        Self {
+    /// Return a flat-filled heightmap based on the passed in `contour_lines` and the given width and height.
+    /// This function will call `flat_fill` to fill the heightmap. The resulting heightmap will look like stairs or river terrace. 
+    pub fn new_flat(contour_lines: Vec<ContourLine<u32>>, w: usize, h: usize) -> Self {
+        let mut heightmap = Self {
             data: vec![vec![None; w]; h],
             contour_lines,
-        }
+        };
+
+        heightmap.flat_fill();
+        heightmap
     }
 
     pub fn to_gray_image(&self) -> GrayImage {
@@ -37,7 +42,7 @@ impl HeightMap {
 }
 
 impl HeightMap {
-    pub fn flat_fill(&mut self) {
+    fn flat_fill(&mut self) {
         let w = self.data[0].len();
         let h = self.data.len();
         let mut filled = vec![vec![false; w as usize]; h as usize];
@@ -62,7 +67,7 @@ impl HeightMap {
         }
     }
 
-    pub fn flood_fill(
+    fn flood_fill(
         &mut self,
         x: usize,
         y: usize,
