@@ -35,8 +35,8 @@ impl ContourLine {
 
                 if p.x == x && p.y == point.y {
                     match last_hit_point {
-                        Some(_) => {
-                            if p.x != last_hit_point.unwrap().x + 1 {
+                        Some(last_hit_point) => {
+                            if p.x != last_hit_point.x + 1 {
                                 hit_count += 1;
                             }
                         }
