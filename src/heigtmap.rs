@@ -107,6 +107,7 @@ impl HeightMap {
         }
     }
 
+    /// Set the points and height value to `data` for each contour line.
     fn draw_contour_lines(&mut self) {
         for cl in &self.contour_lines {
             for p in &cl.contour().points {
