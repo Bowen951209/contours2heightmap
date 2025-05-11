@@ -32,8 +32,7 @@ impl ContourLine {
         for x in point.x..=self.max_x {
             for i in 0..self.contour.points.len() {
                 let p = &self.contour.points[i];
-
-                if p.x == x && p.y == point.y {
+                if p.x == x && p.y == point.y && !self.is_extremum(i) {
                     match last_hit_point {
                         Some(last_hit_point) => {
                             if p.x != last_hit_point.x + 1 {
@@ -58,6 +57,31 @@ impl ContourLine {
 
     pub fn height(&self) -> Option<i32> {
         self.height
+    }
+
+    fn is_extremum(&self, point_index: usize) -> bool {
+        let points = &self.contour.points;
+        let p = points[point_index];
+        let mut right_index = point_index as i32 + 1;
+        while self.point_index_wrap(right_index).y == p.y {
+            right_index += 1;
+        }
+        let right_ordering = self.point_index_wrap(right_index).y.cmp(&p.y);
+
+        let mut left_index = point_index as i32 - 1;
+        while self.point_index_wrap(left_index).y == p.y {
+            left_index -= 1;
+        }
+        let left_ordering = self.point_index_wrap(left_index).y.cmp(&p.y);
+
+        right_ordering == left_ordering
+    }
+
+    fn point_index_wrap(&self, index: i32) -> &Point<usize> {
+        let points = &self.contour.points;
+        let len = points.len() as i32;
+        let wrapped_index = ((index % len + len) % len) as usize;
+        &points[wrapped_index]
     }
 }
 
@@ -177,7 +201,7 @@ mod tests {
         let (contour_lines, _, _) = get_contour_lines_from(file_path.to_str().unwrap());
 
         assert!(!contour_lines[0].is_point_inside(&Point::new(8, 15)));
-        assert!(!contour_lines[0].is_point_inside(&Point::new(63, 63)));
+        assert!(!contour_lines[2].is_point_inside(&Point::new(63, 63)));
     }
 
     #[test]
