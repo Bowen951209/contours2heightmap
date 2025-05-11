@@ -14,13 +14,9 @@ pub struct HeightMap {
 
 impl HeightMap {
     /// Return a flat-filled heightmap based on the passed in `contour_lines` and the given width and height.
-    /// This function will call `flat_fill` to fill the heightmap. The resulting heightmap will look like stairs or river terrace. 
+    /// This function will call `flat_fill` to fill the heightmap. The resulting heightmap will look like stairs or river terrace.
     pub fn new_flat(contour_lines: Vec<ContourLine<u32>>, w: usize, h: usize) -> Self {
-        let mut heightmap = Self {
-            data: vec![vec![None; w]; h],
-            contour_lines,
-        };
-
+        let mut heightmap = Self::new_with_contour_lines_drawn(contour_lines, w, h);
         heightmap.flat_fill();
         heightmap
     }
@@ -39,18 +35,27 @@ impl HeightMap {
 
         image
     }
+
+    /// Create a new `HeightMap` with contour lines drawn on it. It simply calls `draw_contour_lines` to set the points and height value to `data` for each contour line.
+    fn new_with_contour_lines_drawn(contour_lines: Vec<ContourLine<u32>>, w: usize, h: usize) -> Self {
+        let mut heightmap = Self {
+            data: vec![vec![None; w]; h],
+            contour_lines
+        };
+
+        heightmap.draw_contour_lines();
+        heightmap
+    }
 }
 
 impl HeightMap {
     fn flat_fill(&mut self) {
         let w = self.data[0].len();
         let h = self.data.len();
-        let mut filled = vec![vec![false; w as usize]; h as usize];
-        self.draw_contour_lines();
 
         for y in 0..h {
             for x in 0..w {
-                if filled[y as usize][x as usize] || self.data[y][x] != None {
+                if self.data[y][x].is_some() {
                     continue;
                 }
 
@@ -58,7 +63,7 @@ impl HeightMap {
                     find_contour_line_height_interval(Point::new(x, y), &self.data, (0, w));
                 let height = min(left, right).unwrap_or(0);
 
-                self.flood_fill(x, y, height, &mut filled);
+                self.flood_fill(x, y, height);
 
                 // temp debug
                 println!("filled height {}", height);
@@ -66,14 +71,8 @@ impl HeightMap {
         }
     }
 
-    fn flood_fill(
-        &mut self,
-        x: usize,
-        y: usize,
-        replacement_value: i32,
-        filled: &mut [Vec<bool>],
-    ) {
-        if !self.data[y][x].is_none() {
+    fn flood_fill(&mut self, x: usize, y: usize, replacement_value: i32) {
+        if self.data[y][x].is_some() {
             return;
         }
 
@@ -85,12 +84,11 @@ impl HeightMap {
 
         while let Some((cx, cy)) = queue.pop_front() {
             let current = self.data[cy][cx];
-            if !current.is_none() {
+            if current.is_some() {
                 continue;
             }
 
             self.data[cy][cx] = Some(replacement_value);
-            filled[cy as usize][cx as usize] = true;
 
             if cx > 0 {
                 queue.push_back((cx - 1, cy));
