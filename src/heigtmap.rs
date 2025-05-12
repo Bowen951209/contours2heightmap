@@ -4,6 +4,7 @@ use imageproc::{
     point::Point,
 };
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::{collections::VecDeque, vec};
 
 use crate::contour_line::{ContourLine, find_contour_line_interval};
@@ -124,43 +125,18 @@ impl HeightMap {
 
         // Linear fill data
         pb2.set_message("Filling data...");
-        for y in 0..h {
-            for x in 0..w {
-                pb2.inc(1);
-                if self.data[y][x].is_some() {
-                    continue;
-                }
 
-                let height = self.linear_at(&Point::new(x, y), &intervals);
-                self.data[y][x] = Some(height);
-                pb2.set_message(format!("linear fill at ({}, {})", x, y));
-            }
-        }
+        self.data.par_iter_mut().enumerate().for_each(|(y, row)| {
+            row.iter_mut().enumerate().for_each(|(x, val)| {
+                if !val.is_some() {
+                    let height = linear_at(&Point::new(x, y), &intervals);
+                    *val = Some(height);
+                }
+                pb2.inc(1);
+            });
+        });
 
         pb2.finish_with_message("linear fill done");
-    }
-
-    fn linear_at(
-        &self,
-        point: &Point<usize>,
-        intervals: &[Vec<Option<(Option<&ContourLine>, Option<&ContourLine>)>>],
-    ) -> i32 {
-        let (inside, outside) =
-            intervals[point.y][point.x].expect("Interval not properly filled, found a None.");
-        if let (Some(inside), Some(outside)) = (inside, outside) {
-            let inside_height = inside.height().unwrap();
-            let outside_height = outside.height().unwrap();
-            let distance_inside = inside.find_nearest_distance(point);
-            let distance_outside = outside.find_nearest_distance(point);
-            let distance_whole = distance_inside + distance_outside;
-            let t = distance_inside / distance_whole;
-            return lerp(inside_height, outside_height, t) as i32;
-        }
-
-        match inside {
-            Some(cl) => cl.height().unwrap(),
-            None => 0,
-        }
     }
 
     /// Set the points and height value to `data` for each contour line.
@@ -200,6 +176,28 @@ fn flood_fill<T: Clone>(data: &mut [Vec<Option<T>>], x: usize, y: usize, replace
         if cy + 1 < h {
             queue.push_back((cx, cy + 1));
         }
+    }
+}
+
+fn linear_at(
+    point: &Point<usize>,
+    intervals: &[Vec<Option<(Option<&ContourLine>, Option<&ContourLine>)>>],
+) -> i32 {
+    let (inside, outside) =
+        intervals[point.y][point.x].expect("Interval not properly filled, found a None.");
+    if let (Some(inside), Some(outside)) = (inside, outside) {
+        let inside_height = inside.height().unwrap();
+        let outside_height = outside.height().unwrap();
+        let distance_inside = inside.find_nearest_distance(point);
+        let distance_outside = outside.find_nearest_distance(point);
+        let distance_whole = distance_inside + distance_outside;
+        let t = distance_inside / distance_whole;
+        return lerp(inside_height, outside_height, t) as i32;
+    }
+
+    match inside {
+        Some(cl) => cl.height().unwrap(),
+        None => 0,
     }
 }
 
