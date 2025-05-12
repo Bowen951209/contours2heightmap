@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 imageproc = { version = "0.25.0", features = ["display-window"] }
 ab_glyph = "0.2.29"
+indicatif = "0.17.11"

@@ -3,25 +3,28 @@ use imageproc::{
     image::{GrayImage, Luma},
     point::Point,
 };
-use std::{cmp::min, collections::VecDeque, vec};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use std::{collections::VecDeque, vec};
 
-use crate::contour_line::{ContourLine, find_contour_line_height_interval, get_bbox};
+use crate::contour_line::ContourLine;
 
 pub struct HeightMap {
     pub data: Vec<Vec<Option<i32>>>,
-    pub contour_lines: Vec<ContourLine<u32>>,
+    pub contour_lines: Vec<ContourLine>,
 }
 
 impl HeightMap {
     /// Return a flat-filled heightmap based on the passed in `contour_lines` and the given width and height.
-    /// This function will call `flat_fill` to fill the heightmap. The resulting heightmap will look like stairs or river terrace. 
-    pub fn new_flat(contour_lines: Vec<ContourLine<u32>>, w: usize, h: usize) -> Self {
-        let mut heightmap = Self {
-            data: vec![vec![None; w]; h],
-            contour_lines,
-        };
-
+    /// This function will call `flat_fill` to fill the heightmap. The resulting heightmap will look like stairs or river terrace.
+    pub fn new_flat(contour_lines: Vec<ContourLine>, w: usize, h: usize) -> Self {
+        let mut heightmap = Self::new_with_contour_lines_drawn(contour_lines, w, h);
         heightmap.flat_fill();
+        heightmap
+    }
+
+    pub fn new_linear(contour_lines: Vec<ContourLine>, w: usize, h: usize) -> Self {
+        let mut heightmap = Self::new_with_contour_lines_drawn(contour_lines, w, h);
+        heightmap.linear_fill();
         heightmap
     }
 
@@ -39,27 +42,37 @@ impl HeightMap {
 
         image
     }
+
+    /// Create a new `HeightMap` with contour lines drawn on it. It simply calls `draw_contour_lines` to set the points and height value to `data` for each contour line.
+    fn new_with_contour_lines_drawn(contour_lines: Vec<ContourLine>, w: usize, h: usize) -> Self {
+        let mut heightmap = Self {
+            data: vec![vec![None; w]; h],
+            contour_lines,
+        };
+
+        heightmap.draw_contour_lines();
+        heightmap
+    }
 }
 
 impl HeightMap {
     fn flat_fill(&mut self) {
         let w = self.data[0].len();
         let h = self.data.len();
-        let mut filled = vec![vec![false; w as usize]; h as usize];
-        self.draw_contour_lines(&mut filled);
 
         for y in 0..h {
             for x in 0..w {
-                if filled[y as usize][x as usize] || self.data[y][x] != None {
+                if self.data[y][x].is_some() {
                     continue;
                 }
 
-                let bbox = get_bbox(&self.contour_lines);
-                let (left, right) =
-                    find_contour_line_height_interval(Point::new(x, y), &self.data, &bbox);
-                let height = min(left, right).unwrap_or(0);
+                let (inside, _) = find_contour_line_interval(Point::new(x, y), &self.contour_lines);
+                let height = match inside {
+                    Some(_) => inside.unwrap().height().unwrap(),
+                    None => 0,
+                };
 
-                self.flood_fill(x, y, height, &mut filled);
+                flood_fill(&mut self.data, x, y, height);
 
                 // temp debug
                 println!("filled height {}", height);
@@ -67,31 +80,104 @@ impl HeightMap {
         }
     }
 
-    fn flood_fill(
-        &mut self,
-        x: usize,
-        y: usize,
-        replacement_value: i32,
-        filled: &mut [Vec<bool>],
-    ) {
-        if !self.data[y][x].is_none() {
-            return;
-        }
-
+    fn linear_fill(&mut self) {
         let w = self.data[0].len();
         let h = self.data.len();
+        let mut intervals: Vec<Vec<Option<(Option<&ContourLine>, Option<&ContourLine>)>>> = vec![vec![None; w]; h];
+
+        // Progress bar
+        let m = MultiProgress::new();
+        let sty = ProgressStyle::with_template("{percent:.2}% {bar:20.cyan/blue} {pos}/{len} [{elapsed_precise}] {msg}").unwrap();
+        let n = (w * h) as u64;
+        let pb1 = m.add(ProgressBar::new(n));
+        pb1.set_style(sty.clone());
+        let pb2 = m.add(ProgressBar::new(n));
+        pb2.set_style(sty);
+
+        // Set the points on contour lines to have same outer and inner. This is for building walls between different levels for the following flood fill.
+        pb1.set_message("Setting points on contour lines...");
+        for cl in &self.contour_lines {
+            for p in &cl.contour().points {
+                intervals[p.y][p.x] = Some((Some(cl), Some(cl)));
+            }
+        }
+
+        // Use flood fill to set intervals
+        pb1.set_message("Finding intervals for points...");
+        for y in 0..h {
+            for x in 0..w {
+                pb1.inc(1);
+                if intervals[y][x].is_some() {
+                    continue;
+                }
+
+                let interval = find_contour_line_interval(Point::new(x, y), &self.contour_lines);
+                flood_fill(&mut intervals, x, y, interval);
+                pb1.set_message(format!("flood fill at ({}, {})", x, y));
+            }
+        }
+        pb1.finish_with_message("Intervals finding done.");
+
+        // Linear fill data
+        pb2.set_message("Filling data...");
+        for y in 0..h {
+            for x in 0..w {
+                pb2.inc(1);
+                if self.data[y][x].is_some() {
+                    continue;
+                }
+
+                let height = self.linear_at(&Point::new(x, y), &intervals);
+                self.data[y][x] = Some(height);
+                pb2.set_message(format!("linear fill at ({}, {})", x, y));
+            }
+        }
+
+        pb2.finish_with_message("linear fill done");
+    }
+
+    fn linear_at(&self, point: &Point<usize>, intervals: &[Vec<Option<(Option<&ContourLine>, Option<&ContourLine>)>>]) -> i32 {
+        let (inside, outside) = intervals[point.y][point.x].expect("Interval not properly filled, found a None.");
+        if let (Some(inside), Some(outside)) = (inside, outside) {
+            let inside_height = inside.height().unwrap();
+            let outside_height = outside.height().unwrap();
+            let distance_inside = find_nearest_distance(inside, *point);
+            let distance_outside = find_nearest_distance(outside, *point);
+            let distance_whole = distance_inside + distance_outside;
+            let t = distance_inside / distance_whole;
+            return lerp(inside_height, outside_height, t) as i32;
+        }
+
+        match inside {
+            Some(cl) => cl.height().unwrap(),
+            None => 0,
+        }
+    }
+
+    /// Set the points and height value to `data` for each contour line.
+    fn draw_contour_lines(&mut self) {
+        for cl in &self.contour_lines {
+            for p in &cl.contour().points {
+                self.data[p.y as usize][p.x as usize] = Some(cl.height().unwrap());
+            }
+        }
+    }
+}
+
+fn flood_fill<T: Clone>(data: &mut [Vec<Option<T>>], x: usize, y: usize, replacement_value: T) {
+        let w = data[0].len();
+        let h = data.len();
 
         let mut queue = VecDeque::new();
         queue.push_back((x, y));
 
         while let Some((cx, cy)) = queue.pop_front() {
-            let current = self.data[cy][cx];
-            if !current.is_none() {
+            let current = &data[cy][cx];
+            if current.is_some() {
                 continue;
             }
 
-            self.data[cy][cx] = Some(replacement_value);
-            filled[cy as usize][cx as usize] = true;
+            data[cy][cx] = Some(replacement_value.clone());
 
             if cx > 0 {
                 queue.push_back((cx - 1, cy));
@@ -108,14 +194,43 @@ impl HeightMap {
         }
     }
 
-    fn draw_contour_lines(&mut self, filled: &mut [Vec<bool>]) {
-        for cl in &self.contour_lines {
-            for p in &cl.contour().points {
-                self.data[p.y as usize][p.x as usize] = Some(cl.height().unwrap());
-                filled[p.y as usize][p.x as usize] = true;
-            }
+/// Find the contour line interval where `point` is located.
+fn find_contour_line_interval(
+    point: Point<usize>,
+    sorted_contour_lines: &[ContourLine],
+) -> (Option<&ContourLine>, Option<&ContourLine>) {
+    let mut inside = None;
+    let mut outside = None;
+
+    for cl in sorted_contour_lines {
+        if cl.is_point_inside(&point) {
+            inside = Some(cl);
+        } else {
+            outside = Some(cl);
+            break;
         }
     }
+
+    (inside, outside)
+}
+
+fn find_nearest_distance(contour_line: &ContourLine, point: Point<usize>) -> f32 {
+    contour_line
+        .contour()
+        .points
+        .iter()
+        .map(|p| distance(&point, p))
+        .fold(f32::MAX, f32::min)
+}
+
+fn distance(a: &Point<usize>, b: &Point<usize>) -> f32 {
+    let dx = a.x as f32 - b.x as f32;
+    let dy = a.y as f32 - b.y as f32;
+    (dx * dx + dy * dy).sqrt()
+}
+
+fn lerp(a: i32, b: i32, t: f32) -> f32 {
+    a as f32 * (1.0 - t) + b as f32 * t
 }
 
 fn height_to_u8(h: i32, max_h: i32) -> u8 {

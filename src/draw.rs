@@ -1,7 +1,42 @@
 use ab_glyph::{Font, PxScale, ScaleFont};
 use imageproc::definitions::Clamp;
 use imageproc::drawing::Canvas;
-use imageproc::image::Pixel;
+use imageproc::image::{GrayImage, Pixel, Rgb, RgbImage};
+use imageproc::map::map_colors;
+
+use crate::contour_line::ContourLine;
+
+pub fn draw_contour_lines_with_text(
+    image: &mut RgbImage,
+    contour_lines: &[ContourLine],
+    font: &impl Font,
+) {
+    for contour_line in contour_lines {
+        // Draw all contour line points
+        let points = &contour_line.contour().points;
+        for point in points {
+            image.draw_pixel(point.x as u32, point.y as u32, Rgb::from([255, 0, 0]));
+        }
+
+        // Mark the first point of the contour line with height value
+        let point0 = points[0];
+        let scale = PxScale::from(24.0);
+        let text = contour_line
+            .height()
+            .expect("Contour line does not have height")
+            .to_string();
+
+        draw_text_on_center(
+            image,
+            Rgb::from([0, 255, 0]),
+            point0.x as i32,
+            point0.y as i32,
+            scale,
+            font,
+            &text,
+        );
+    }
+}
 
 pub fn draw_text_on_center<C>(
     canvas: &mut C,
@@ -33,4 +68,8 @@ pub fn measure_text(scale: impl Into<PxScale>, font: &impl Font, text: &str) -> 
     let height = scaled_font.ascent() - scaled_font.descent();
 
     (width, height)
+}
+
+pub fn gray_to_rgb(gray_image: &GrayImage) -> RgbImage {
+    map_colors(gray_image, |p| Rgb([p[0], p[0], p[0]]))
 }
