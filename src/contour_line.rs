@@ -47,6 +47,14 @@ impl ContourLine {
         hit_count % 2 == 1
     }
 
+    pub fn find_nearest_distance(&self, point: &Point<usize>) -> f32 {
+        self.contour()
+            .points
+            .iter()
+            .map(|p| distance(&point, p))
+            .fold(f32::MAX, f32::min)
+    }
+
     pub fn contour(&self) -> &Contour<usize> {
         &self.contour
     }
@@ -97,6 +105,26 @@ pub fn get_contour_lines_from(file_path: &str) -> (Vec<ContourLine>, u32, u32) {
     (to_contour_lines(contours), w, h)
 }
 
+/// Find the contour line interval where `point` is located.
+pub fn find_contour_line_interval(
+    point: Point<usize>,
+    sorted_contour_lines: &[ContourLine],
+) -> (Option<&ContourLine>, Option<&ContourLine>) {
+    let mut inside = None;
+    let mut outside = None;
+
+    for cl in sorted_contour_lines {
+        if cl.is_point_inside(&point) {
+            inside = Some(cl);
+        } else {
+            outside = Some(cl);
+            break;
+        }
+    }
+
+    (inside, outside)
+}
+
 fn sort_by_parent(contour_lines: &mut [ContourLine]) {
     contour_lines.sort_by(|a, b| a.contour.parent.unwrap().cmp(&b.contour.parent.unwrap()));
 }
@@ -125,6 +153,12 @@ fn set_heights(sorted_contour_lines: &mut [ContourLine]) {
         height += GAP;
         contour_line.height = Some(height);
     }
+}
+
+fn distance(a: &Point<usize>, b: &Point<usize>) -> f32 {
+    let dx = a.x as f32 - b.x as f32;
+    let dy = a.y as f32 - b.y as f32;
+    (dx * dx + dy * dy).sqrt()
 }
 
 #[cfg(test)]
