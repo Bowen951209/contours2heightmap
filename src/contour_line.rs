@@ -130,11 +130,7 @@ fn retain_outer<T>(contours: &mut Vec<Contour<T>>) {
 }
 
 fn to_contour_lines(contours: Vec<Contour<usize>>) -> Vec<ContourLine> {
-    let mut contour_lines = Vec::new();
-    for contour in contours {
-        let contour_line = ContourLine::new(contour);
-        contour_lines.push(contour_line);
-    }
+    let mut contour_lines: Vec<_> = contours.into_iter().map(ContourLine::new).collect();
 
     set_heights(&mut contour_lines);
     contour_lines
