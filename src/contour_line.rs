@@ -163,8 +163,8 @@ mod tests {
     use imageproc::point::Point;
 
     #[test]
-    fn points_inside_simple_contour_lines() {
-        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/contour_lines.png");
+    fn test_points_inside_one_hill() {
+        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/one_hill.png");
         let (contour_lines, _, _) = get_contour_lines_from(file_path.to_str().unwrap());
 
         assert!(contour_lines[0].is_point_inside(&Point::new(94, 23)));
@@ -183,8 +183,8 @@ mod tests {
     }
 
     #[test]
-    fn extremum_points_outside_simple_contour_lines() {
-        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/contour_lines.png");
+    fn test_extremum_points_outside_one_hill() {
+        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/one_hill.png");
         let (contour_lines, _, _) = get_contour_lines_from(file_path.to_str().unwrap());
 
         assert!(!contour_lines[0].is_point_inside(&Point::new(8, 15)));
@@ -192,8 +192,8 @@ mod tests {
     }
 
     #[test]
-    fn four_contours_lines_in_simple_contour_lines() {
-        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/contour_lines.png");
+    fn test_four_contours_lines_in_one_hill() {
+        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/one_hill.png");
         let (contour_lines, _, _) = get_contour_lines_from(file_path.to_str().unwrap());
 
         assert_eq!(contour_lines.len(), 4);
