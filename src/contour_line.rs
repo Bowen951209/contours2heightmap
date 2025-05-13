@@ -105,7 +105,7 @@ pub fn get_contour_lines_from(file_path: &str) -> (Vec<ContourLine>, u32, u32) {
     (to_contour_lines(contours), w, h)
 }
 
-/// Find the contour line interval where `point` is located.
+/// Find the contour line interval where `point` is located. The passed in `contour_lines` should be sorted with their parents order.
 pub fn find_contour_line_interval(
     point: Point<usize>,
     sorted_contour_lines: &[ContourLine],
@@ -125,10 +125,6 @@ pub fn find_contour_line_interval(
     (inside, outside)
 }
 
-fn sort_by_parent(contour_lines: &mut [ContourLine]) {
-    contour_lines.sort_by(|a, b| a.contour.parent.unwrap().cmp(&b.contour.parent.unwrap()));
-}
-
 fn retain_outer<T>(contours: &mut Vec<Contour<T>>) {
     contours.retain(|c| c.border_type == BorderType::Outer);
 }
@@ -140,11 +136,13 @@ fn to_contour_lines(contours: Vec<Contour<usize>>) -> Vec<ContourLine> {
         contour_lines.push(contour_line);
     }
 
-    sort_by_parent(&mut contour_lines);
     set_heights(&mut contour_lines);
     contour_lines
 }
 
+/// Set the heights of the contour lines by their order in the passed in vector.
+/// The default order `imageproc` returns is sorted by the parent order, which starts from outer to inner.
+/// Thus, by default, this function makes the outermost contour line the lowest and the innermost the highest.
 fn set_heights(sorted_contour_lines: &mut [ContourLine]) {
     let mut height = 0;
     const GAP: i32 = 50;
