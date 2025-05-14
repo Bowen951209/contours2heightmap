@@ -151,10 +151,9 @@ pub fn find_contour_line_interval(
     outside = outside_candidates
         .iter()
         .min_by(|a, b| {
-            let point = [point.x as i32, point.y as i32];
-            a.envelope()
-                .distance_2(&point)
-                .cmp(&b.envelope().distance_2(&point))
+            a.find_nearest_distance(&point)
+                .partial_cmp(&b.find_nearest_distance(&point))
+                .unwrap()
         })
         .map(|v| *v);
 
