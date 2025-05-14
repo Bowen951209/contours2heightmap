@@ -263,10 +263,10 @@ mod tests {
     }
 
     #[test]
-    fn test_twelve_contour_lines_in_two_hills() {
+    fn test_thirteen_contour_lines_in_two_hills() {
         let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.png");
         let (contour_lines, _, _) = get_contour_line_tree_from(file_path.to_str().unwrap());
 
-        assert_eq!(contour_lines.size(), 12);
+        assert_eq!(contour_lines.size(), 13);
     }
 }
