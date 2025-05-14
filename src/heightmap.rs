@@ -142,7 +142,7 @@ impl HeightMap {
 
         self.data.par_iter_mut().enumerate().for_each(|(y, row)| {
             row.iter_mut().enumerate().for_each(|(x, val)| {
-                if !val.is_some() {
+                if val.is_none() {
                     let height = linear_at(&Point::new(x, y), &intervals);
                     *val = Some(height);
                 }
