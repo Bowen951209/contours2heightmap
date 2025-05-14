@@ -1,12 +1,12 @@
 mod contour_line;
 mod draw;
 mod font;
-mod heigtmap;
+mod heightmap;
 
 use std::{env, path::PathBuf, process};
 
 use font::load_sans;
-use heigtmap::HeightMap;
+use heightmap::HeightMap;
 use imageproc::window::display_image;
 
 struct Config {
