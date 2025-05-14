@@ -122,33 +122,34 @@ pub fn get_contour_line_tree_from(file_path: &str) -> (RTree<ContourLine>, u32, 
 }
 
 /// Find the contour line interval where `point` is located. The passed in `contour_lines` should be sorted with their parents order.
+/// Return a tuple of `(the inner contour line, the outer contour line)`
 pub fn find_contour_line_interval(
     point: Point<usize>,
     contour_line_tree: &RTree<ContourLine>,
 ) -> (Option<&ContourLine>, Option<&ContourLine>) {
-    let mut inside = None;
-    let outside;
+    let mut outside = None;
+    let inside;
 
     // Sort by height
     let mut sorted = contour_line_tree.iter().collect::<Vec<_>>();
     sorted.sort_by(|a, b| a.height().unwrap().cmp(&b.height().unwrap()));
 
-    let mut outside_candidates = Vec::new();
+    let mut inside_candidates = Vec::new();
 
     for cl in sorted {
         if cl.is_point_inside(&point) {
-            inside = Some(cl);
-        } else if let Some(inside) = inside {
+            outside = Some(cl);
+        } else if let Some(inside) = outside {
             if inside.envelope().contains_envelope(&cl.envelope()) {
                 if inside.height().unwrap() != cl.height().unwrap() - GAP {
                     break;
                 }
-                outside_candidates.push(cl);
+                inside_candidates.push(cl);
             }
         }
     }
 
-    outside = outside_candidates
+    inside = inside_candidates
         .iter()
         .min_by(|a, b| {
             a.find_nearest_distance(&point)
@@ -253,12 +254,12 @@ mod tests {
         let (tree, _, _) = get_contour_line_tree_from(file_path.to_str().unwrap());
 
         let (inside, outside) = find_contour_line_interval(Point::new(242, 184), &tree);
-        assert_eq!(inside.unwrap().height().unwrap(), GAP);
-        assert_eq!(outside.unwrap().height().unwrap(), GAP * 2);
+        assert_eq!(outside.unwrap().height().unwrap(), GAP);
+        assert_eq!(inside.unwrap().height().unwrap(), GAP * 2);
 
         let (inside, outside) = find_contour_line_interval(Point::new(151, 135), &tree);
-        assert_eq!(inside.unwrap().height().unwrap(), GAP * 2);
-        assert_eq!(outside.unwrap().height().unwrap(), GAP * 3);
+        assert_eq!(outside.unwrap().height().unwrap(), GAP * 2);
+        assert_eq!(inside.unwrap().height().unwrap(), GAP * 3);
     }
 
     #[test]

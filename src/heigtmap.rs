@@ -79,10 +79,10 @@ impl HeightMap {
                     continue;
                 }
 
-                let (inside, _) =
+                let (_, outside) =
                     find_contour_line_interval(Point::new(x, y), &self.contour_line_tree);
-                let height = match inside {
-                    Some(inside) => inside.height().unwrap(),
+                let height = match outside {
+                    Some(outside) => outside.height().unwrap(),
                     None => 0,
                 };
 
@@ -203,17 +203,17 @@ fn linear_at(
 ) -> i32 {
     let (inside, outside) =
         intervals[point.y][point.x].expect("Interval not properly filled, found a None.");
-    if let (Some(inside), Some(outside)) = (inside, outside) {
-        let inside_height = inside.height().unwrap();
+    if let (Some(outside), Some(inside)) = (outside, inside) {
         let outside_height = outside.height().unwrap();
-        let distance_inside = inside.find_nearest_distance(point);
+        let inside_height = inside.height().unwrap();
         let distance_outside = outside.find_nearest_distance(point);
-        let distance_whole = distance_inside + distance_outside;
-        let t = distance_inside / distance_whole;
-        return lerp(inside_height, outside_height, t) as i32;
+        let distance_inside = inside.find_nearest_distance(point);
+        let distance_whole = distance_outside + distance_inside;
+        let t = distance_outside / distance_whole;
+        return lerp(outside_height, inside_height, t) as i32;
     }
 
-    match inside {
+    match outside {
         Some(cl) => cl.height().unwrap(),
         None => 0,
     }
