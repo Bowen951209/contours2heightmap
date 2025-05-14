@@ -5,26 +5,28 @@ use imageproc::{
 };
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
+use rstar::RTree;
 use std::{collections::VecDeque, vec};
 
 use crate::contour_line::{ContourLine, find_contour_line_interval};
 
 pub struct HeightMap {
     pub data: Vec<Vec<Option<i32>>>,
-    pub contour_lines: Vec<ContourLine>,
+    pub contour_line_tree: RTree<ContourLine>,
+    max_height: i32,
 }
 
 impl HeightMap {
     /// Return a flat-filled heightmap based on the passed in `contour_lines` and the given width and height.
     /// This function will call `flat_fill` to fill the heightmap. The resulting heightmap will look like stairs or river terrace.
-    pub fn new_flat(contour_lines: Vec<ContourLine>, w: usize, h: usize) -> Self {
-        let mut heightmap = Self::new_with_contour_lines_drawn(contour_lines, w, h);
+    pub fn new_flat(contour_line_tree: RTree<ContourLine>, w: usize, h: usize) -> Self {
+        let mut heightmap = Self::new_with_contour_lines_drawn(contour_line_tree, w, h);
         heightmap.flat_fill();
         heightmap
     }
 
-    pub fn new_linear(contour_lines: Vec<ContourLine>, w: usize, h: usize) -> Self {
-        let mut heightmap = Self::new_with_contour_lines_drawn(contour_lines, w, h);
+    pub fn new_linear(contour_line_tree: RTree<ContourLine>, w: usize, h: usize) -> Self {
+        let mut heightmap = Self::new_with_contour_lines_drawn(contour_line_tree, w, h);
         heightmap.linear_fill();
         heightmap
     }
@@ -36,7 +38,7 @@ impl HeightMap {
         for y in 0..h {
             for x in 0..w {
                 let val = self.data[y][x].unwrap();
-                let gray = height_to_u8(val, 200);
+                let gray = self.height_to_u8(val);
                 image.draw_pixel(x as u32, y as u32, Luma([gray]));
             }
         }
@@ -45,10 +47,20 @@ impl HeightMap {
     }
 
     /// Create a new `HeightMap` with contour lines drawn on it. It simply calls `draw_contour_lines` to set the points and height value to `data` for each contour line.
-    fn new_with_contour_lines_drawn(contour_lines: Vec<ContourLine>, w: usize, h: usize) -> Self {
+    fn new_with_contour_lines_drawn(
+        contour_line_tree: RTree<ContourLine>,
+        w: usize,
+        h: usize,
+    ) -> Self {
+        let max_height = contour_line_tree
+            .iter()
+            .map(|cl| cl.height().unwrap())
+            .max()
+            .unwrap();
         let mut heightmap = Self {
             data: vec![vec![None; w]; h],
-            contour_lines,
+            contour_line_tree,
+            max_height,
         };
 
         heightmap.draw_contour_lines();
@@ -67,9 +79,10 @@ impl HeightMap {
                     continue;
                 }
 
-                let (inside, _) = find_contour_line_interval(Point::new(x, y), &self.contour_lines);
+                let (inside, _) =
+                    find_contour_line_interval(Point::new(x, y), &self.contour_line_tree);
                 let height = match inside {
-                    Some(_) => inside.unwrap().height().unwrap(),
+                    Some(inside) => inside.height().unwrap(),
                     None => 0,
                 };
 
@@ -101,7 +114,7 @@ impl HeightMap {
 
         // Set the points on contour lines to have same outer and inner. This is for building walls between different levels for the following flood fill.
         pb1.set_message("Setting points on contour lines...");
-        for cl in &self.contour_lines {
+        for cl in &self.contour_line_tree {
             for p in &cl.contour().points {
                 intervals[p.y][p.x] = Some((Some(cl), Some(cl)));
             }
@@ -116,7 +129,8 @@ impl HeightMap {
                     continue;
                 }
 
-                let interval = find_contour_line_interval(Point::new(x, y), &self.contour_lines);
+                let interval =
+                    find_contour_line_interval(Point::new(x, y), &self.contour_line_tree);
                 flood_fill(&mut intervals, x, y, interval);
                 pb1.set_message(format!("flood fill at ({}, {})", x, y));
             }
@@ -141,11 +155,15 @@ impl HeightMap {
 
     /// Set the points and height value to `data` for each contour line.
     fn draw_contour_lines(&mut self) {
-        for cl in &self.contour_lines {
+        for cl in &self.contour_line_tree {
             for p in &cl.contour().points {
                 self.data[p.y as usize][p.x as usize] = Some(cl.height().unwrap());
             }
         }
+    }
+
+    fn height_to_u8(&self, h: i32) -> u8 {
+        (h as f32 / self.max_height as f32 * 255.0) as u8
     }
 }
 
@@ -203,8 +221,4 @@ fn linear_at(
 
 fn lerp(a: i32, b: i32, t: f32) -> f32 {
     a as f32 * (1.0 - t) + b as f32 * t
-}
-
-fn height_to_u8(h: i32, max_h: i32) -> u8 {
-    (h as f32 / max_h as f32 * 255.0) as u8
 }
