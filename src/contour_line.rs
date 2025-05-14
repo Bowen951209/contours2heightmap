@@ -200,12 +200,13 @@ fn distance(a: &Point<usize>, b: &Point<usize>) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, path::Path};
+    use std::{env, path::Path, ptr};
 
-    use crate::contour_line::GAP;
+    use crate::contour_line::{ContourLine, GAP};
 
     use super::{find_contour_line_interval, get_contour_line_tree_from};
     use imageproc::point::Point;
+    use rstar::Envelope;
 
     #[test]
     fn test_points_inside_one_hill() {
@@ -260,6 +261,40 @@ mod tests {
         let (inside, outside) = find_contour_line_interval(Point::new(151, 135), &tree);
         assert_eq!(outside.unwrap().height().unwrap(), GAP * 2);
         assert_eq!(inside.unwrap().height().unwrap(), GAP * 3);
+    }
+
+    #[test]
+    fn test_232_117_interval_smaller_area_two_hills() {
+        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.png");
+        let (tree, _, _) = get_contour_line_tree_from(file_path.to_str().unwrap());
+
+        let (inside, _) = find_contour_line_interval(Point::new(232, 117), &tree);
+        let inside = inside.unwrap();
+
+        let another_gap_3: Vec<&ContourLine> = tree
+            .iter()
+            .filter(|cl| cl.height().unwrap() == GAP * 3 && !ptr::eq(*cl, inside))
+            .collect();
+        assert_eq!(another_gap_3.len(), 1);
+
+        assert!(inside.bbox.area() < another_gap_3[0].bbox.area());
+    }
+
+    #[test]
+    fn test_151_119_interval_greater_area_two_hills() {
+        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.png");
+        let (tree, _, _) = get_contour_line_tree_from(file_path.to_str().unwrap());
+
+        let (inside, _) = find_contour_line_interval(Point::new(151, 119), &tree);
+        let inside = inside.unwrap();
+
+        let another_gap_3: Vec<&ContourLine> = tree
+            .iter()
+            .filter(|cl| cl.height().unwrap() == GAP * 3 && !ptr::eq(*cl, inside))
+            .collect();
+        assert_eq!(another_gap_3.len(), 1);
+
+        assert!(inside.bbox.area() > another_gap_3[0].bbox.area());
     }
 
     #[test]
