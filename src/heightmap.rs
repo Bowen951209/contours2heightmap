@@ -143,7 +143,8 @@ impl HeightMap {
         self.data.par_iter_mut().enumerate().for_each(|(y, row)| {
             row.iter_mut().enumerate().for_each(|(x, val)| {
                 if val.is_none() {
-                    let height = linear_at(&Point::new(x, y), &intervals);
+                    let interval = intervals[y][x].expect("interval should exist");
+                    let height = linear_at(&Point::new(x, y), interval);
                     *val = Some(height);
                 }
                 pb2.inc(1);
@@ -197,12 +198,8 @@ fn flood_fill<T: Clone>(data: &mut [Vec<Option<T>>], x: usize, y: usize, replace
     }
 }
 
-fn linear_at(
-    point: &Point<usize>,
-    intervals: &[Vec<Option<(Option<&ContourLine>, Option<&ContourLine>)>>],
-) -> i32 {
-    let (inside, outside) =
-        intervals[point.y][point.x].expect("Interval not properly filled, found a None.");
+fn linear_at(point: &Point<usize>, interval: (Option<&ContourLine>, Option<&ContourLine>)) -> i32 {
+    let (inside, outside) = interval;
     if let (Some(outside), Some(inside)) = (outside, inside) {
         let outside_height = outside.height().unwrap();
         let inside_height = inside.height().unwrap();
@@ -221,4 +218,51 @@ fn linear_at(
 
 fn lerp(a: i32, b: i32, t: f32) -> f32 {
     a as f32 * (1.0 - t) + b as f32 * t
+}
+
+mod test {
+    use std::path::Path;
+
+    use imageproc::point::Point;
+
+    use crate::{
+        contour_line,
+        heightmap::{HeightMap, linear_at},
+    };
+
+    #[test]
+    fn test_one_hill_removed_and_two_hills_have_same_linear_height_at_same_point() {
+        let file_path_one_hill_removed = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("assets/one_hill_removed_from_two_hills.png");
+        let (contour_lines_one_hill_removed, w, h) =
+            contour_line::get_contour_line_tree_from(file_path_one_hill_removed.to_str().unwrap());
+        let one_hill_removed_heightmap = HeightMap::new_with_contour_lines_drawn(
+            contour_lines_one_hill_removed,
+            w as usize,
+            h as usize,
+        );
+
+        let file_path_two_hills =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.png");
+        let (contour_lines_two_hills, w, h) =
+            contour_line::get_contour_line_tree_from(file_path_two_hills.to_str().unwrap());
+        let two_hills_heightmap = HeightMap::new_with_contour_lines_drawn(
+            contour_lines_two_hills,
+            w as usize,
+            h as usize,
+        );
+
+        let point = Point::new(228, 114);
+        let one_hill_removed_interval = contour_line::find_contour_line_interval(
+            point,
+            &one_hill_removed_heightmap.contour_line_tree,
+        );
+        let two_hills_interval =
+            contour_line::find_contour_line_interval(point, &two_hills_heightmap.contour_line_tree);
+
+        assert_eq!(
+            linear_at(&point, one_hill_removed_interval),
+            linear_at(&point, two_hills_interval)
+        );
+    }
 }
