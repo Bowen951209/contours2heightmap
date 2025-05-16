@@ -219,6 +219,7 @@ fn lerp(a: i32, b: i32, t: f32) -> f32 {
     a as f32 * (1.0 - t) + b as f32 * t
 }
 
+#[cfg(test)]
 mod test {
     use std::path::Path;
 
