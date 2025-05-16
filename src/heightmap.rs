@@ -8,7 +8,7 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelI
 use rstar::RTree;
 use std::{collections::VecDeque, vec};
 
-use crate::contour_line::{ContourLine, ContourLineInterval, find_contour_line_interval};
+use crate::contour_line::{self, ContourLine, ContourLineInterval, find_contour_line_interval};
 
 pub struct HeightMap {
     pub data: Vec<Vec<Option<i32>>>,
@@ -116,7 +116,7 @@ impl HeightMap {
         pb1.set_message("Setting points on contour lines...");
         for cl in &self.contour_line_tree {
             for p in &cl.contour().points {
-                intervals[p.y][p.x] = Some(ContourLineInterval::new(Some(cl), Some(cl)));
+                intervals[p.y][p.x] = Some(ContourLineInterval::new(cl, cl));
             }
         }
 
@@ -143,8 +143,8 @@ impl HeightMap {
         self.data.par_iter_mut().enumerate().for_each(|(y, row)| {
             row.iter_mut().enumerate().for_each(|(x, val)| {
                 if val.is_none() {
-                    let interval = intervals[y][x].expect("interval should exist");
-                    let height = linear_at(&Point::new(x, y), &interval);
+                    let interval = intervals[y][x].as_ref().expect("interval should exist");
+                    let height = linear_at(&Point::new(x, y), interval);
                     *val = Some(height);
                 }
                 pb2.inc(1);
@@ -199,20 +199,20 @@ fn flood_fill<T: Clone>(data: &mut [Vec<Option<T>>], x: usize, y: usize, replace
 }
 
 fn linear_at(point: &Point<usize>, interval: &ContourLineInterval) -> i32 {
-    if let (Some(outer), Some(inner)) = (interval.outer(), interval.inner()) {
-        let outside_height = outer.height().unwrap();
-        let inside_height = inner.height().unwrap();
-        let distance_outside = outer.find_nearest_distance(point);
-        let distance_inside = inner.find_nearest_distance(point);
-        let distance_whole = distance_outside + distance_inside;
-        let t = distance_outside / distance_whole;
-        return lerp(outside_height, inside_height, t) as i32;
+    if let (Some(outer), inners) = (interval.outer(), interval.inners()) {
+        if !inners.is_empty() {
+            let outer_height = outer.height().unwrap();
+            let (_, distance_to_outer) = outer.find_nearest_point(point);
+
+            let inner_height = inners[0].height().unwrap();
+            let (_, distance_to_inner) = contour_line::find_nearest_point(point, inners);
+            let total_distance = distance_to_outer + distance_to_inner;
+            let t = distance_to_outer / total_distance;
+            return lerp(outer_height, inner_height, t) as i32;
+        }
     }
 
-    match interval.outer() {
-        Some(cl) => cl.height().unwrap(),
-        None => 0,
-    }
+    interval.outer().map_or(0, |cl| cl.height().unwrap())
 }
 
 fn lerp(a: i32, b: i32, t: f32) -> f32 {

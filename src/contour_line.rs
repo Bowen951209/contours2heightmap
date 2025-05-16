@@ -55,12 +55,17 @@ impl ContourLine {
         hit_count % 2 == 1
     }
 
-    pub fn find_nearest_distance(&self, point: &Point<usize>) -> f32 {
-        self.contour()
-            .points
-            .iter()
-            .map(|p| distance(&point, p))
-            .fold(f32::MAX, f32::min)
+    pub fn find_nearest_point(&self, point: &Point<usize>) -> (&Point<usize>, f32) {
+        let mut min_distance = f32::MAX;
+        let mut min_point = None;
+        for p in &self.contour().points {
+            let distance = distance(&point, p);
+            if distance < min_distance {
+                min_distance = distance;
+                min_point = Some(p);
+            }
+        }
+        (min_point.unwrap(), min_distance)
     }
 
     pub fn contour(&self) -> &Contour<usize> {
@@ -105,23 +110,26 @@ impl RTreeObject for ContourLine {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct ContourLineInterval<'a> {
     outer: Option<&'a ContourLine>,
-    inner: Option<&'a ContourLine>,
+    inners: Vec<&'a ContourLine>,
 }
 
 impl<'a> ContourLineInterval<'a> {
-    pub fn new(outer: Option<&'a ContourLine>, inner: Option<&'a ContourLine>) -> Self {
-        Self { outer, inner }
+    pub fn new(outer: &'a ContourLine, inner: &'a ContourLine) -> Self {
+        Self {
+            outer: Some(outer),
+            inners: vec![inner],
+        }
     }
 
     pub fn outer(&self) -> Option<&ContourLine> {
         self.outer
     }
 
-    pub fn inner(&self) -> Option<&ContourLine> {
-        self.inner
+    pub fn inners(&self) -> &Vec<&ContourLine> {
+        &self.inners
     }
 }
 
@@ -141,43 +149,55 @@ pub fn get_contour_line_tree_from(file_path: &str) -> (RTree<ContourLine>, u32, 
     (to_contour_lines(contours), w, h)
 }
 
-/// Find the contour line interval where `point` is located. The passed in `contour_lines` should be sorted with their parents order.
-/// Return a tuple of `(the inner contour line, the outer contour line)`
+/// Find the contour line interval where `point` is located.
 pub fn find_contour_line_interval(
     point: Point<usize>,
     contour_line_tree: &RTree<ContourLine>,
 ) -> ContourLineInterval {
-    let mut outer = None;
+    // Sort contour lines by height
+    let mut sorted_contour_lines = contour_line_tree.iter().collect::<Vec<_>>();
+    sorted_contour_lines.sort_by_key(|cl| cl.height().unwrap());
 
-    // Sort by height
-    let mut sorted = contour_line_tree.iter().collect::<Vec<_>>();
-    sorted.sort_by(|a, b| a.height().unwrap().cmp(&b.height().unwrap()));
+    // Identify the outer contour line
+    let outer_contour_line = sorted_contour_lines
+        .iter()
+        .rev()
+        .find(|cl| cl.is_point_inside(&point))
+        .copied();
 
-    let mut inside_candidates = Vec::new();
+    // Collect inner contour lines
+    let inner_contour_lines = if let Some(outer) = outer_contour_line {
+        let target_height = outer.height().unwrap() + GAP;
+        let outer_envelope = outer.envelope();
+        contour_line_tree
+            .iter()
+            .filter(|cl| cl.height().unwrap() == target_height)
+            .filter(|cl| outer_envelope.contains_envelope(&cl.envelope()))
+            .collect()
+    } else {
+        Vec::new()
+    };
 
-    for cl in sorted {
-        if cl.is_point_inside(&point) {
-            outer = Some(cl);
-        } else if let Some(inside) = outer {
-            if inside.envelope().contains_envelope(&cl.envelope()) {
-                if inside.height().unwrap() != cl.height().unwrap() - GAP {
-                    break;
-                }
-                inside_candidates.push(cl);
-            }
+    ContourLineInterval {
+        outer: outer_contour_line,
+        inners: inner_contour_lines,
+    }
+}
+
+pub fn find_nearest_point<'a>(
+    point: &Point<usize>,
+    contour_lines: &'a [&ContourLine],
+) -> (&'a Point<usize>, f32) {
+    let mut min_distance = f32::MAX;
+    let mut min_point = None;
+    for cl in contour_lines {
+        let (p, d) = cl.find_nearest_point(point);
+        if d < min_distance {
+            min_distance = d;
+            min_point = Some(p);
         }
     }
-
-    let inner = inside_candidates
-        .iter()
-        .min_by(|a, b| {
-            a.find_nearest_distance(&point)
-                .partial_cmp(&b.find_nearest_distance(&point))
-                .unwrap()
-        })
-        .map(|v| *v);
-
-    ContourLineInterval { outer, inner }
+    (min_point.unwrap(), min_distance)
 }
 
 fn retain_outer<T>(contours: &mut Vec<Contour<T>>) {
@@ -275,29 +295,21 @@ mod tests {
 
         let interval = find_contour_line_interval(Point::new(242, 184), &tree);
         assert_eq!(interval.outer.unwrap().height().unwrap(), GAP);
-        assert_eq!(interval.inner.unwrap().height().unwrap(), GAP * 2);
+        assert_eq!(interval.inners[0].height().unwrap(), GAP * 2);
 
         let interval = find_contour_line_interval(Point::new(151, 135), &tree);
         assert_eq!(interval.outer.unwrap().height().unwrap(), GAP * 2);
-        assert_eq!(interval.inner.unwrap().height().unwrap(), GAP * 3);
+        assert_eq!(interval.inners[0].height().unwrap(), GAP * 3);
     }
 
     #[test]
-    fn test_232_117_interval_smaller_area_two_hills() {
+    fn test_232_117_two_inners_two_hills() {
         let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.png");
         let (tree, _, _) = get_contour_line_tree_from(file_path.to_str().unwrap());
 
-        let inner = find_contour_line_interval(Point::new(232, 117), &tree)
-            .inner
-            .unwrap();
-
-        let another_gap_3: Vec<&ContourLine> = tree
-            .iter()
-            .filter(|cl| cl.height().unwrap() == GAP * 3 && !ptr::eq(*cl, inner))
-            .collect();
-        assert_eq!(another_gap_3.len(), 1);
-
-        assert!(inner.bbox.area() < another_gap_3[0].bbox.area());
+        let interval = find_contour_line_interval(Point::new(232, 117), &tree);
+        let inners = interval.inners();
+        assert_eq!(inners.len(), 2);
     }
 
     #[test]
@@ -305,9 +317,7 @@ mod tests {
         let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.png");
         let (tree, _, _) = get_contour_line_tree_from(file_path.to_str().unwrap());
 
-        let inner = find_contour_line_interval(Point::new(151, 119), &tree)
-            .inner
-            .unwrap();
+        let inner = find_contour_line_interval(Point::new(151, 119), &tree).inners[0];
 
         let another_gap_3: Vec<&ContourLine> = tree
             .iter()
