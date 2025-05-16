@@ -31,23 +31,17 @@ impl ContourLine {
     }
 
     pub fn is_point_inside(&self, point: &Point<usize>) -> bool {
-        let mut hit_count: u32 = 0;
-        let mut last_hit_point: Option<&Point<usize>> = None;
+        let mut hit_count = 0;
+        let mut previous_point: Option<&Point<usize>> = None;
         for x in point.x..=self.bbox.upper()[0] as usize {
             for i in 0..self.contour.points.len() {
-                let p = &self.contour.points[i];
-                if p.x == x && p.y == point.y && !self.is_extremum(i) {
-                    match last_hit_point {
-                        Some(last_hit_point) => {
-                            if p.x != last_hit_point.x + 1 {
-                                hit_count += 1;
-                            }
-                        }
-                        None => {
-                            hit_count += 1;
-                        }
+                let current_point = &self.contour.points[i];
+                if current_point.x == x && current_point.y == point.y && !self.is_extremum(i) {
+                    if previous_point.is_none() || current_point.x != previous_point.unwrap().x + 1
+                    {
+                        hit_count += 1;
                     }
-                    last_hit_point = Some(p);
+                    previous_point = Some(current_point);
                 }
             }
         }
