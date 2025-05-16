@@ -7,7 +7,8 @@ use imageproc::{
 };
 use rstar::{AABB, Envelope, RTree, RTreeObject};
 
-const GAP: i32 = 50;
+pub const GAP: i32 = 50;
+
 pub struct ContourLine {
     contour: Contour<usize>,
     height: Option<i32>,

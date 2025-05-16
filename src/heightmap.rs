@@ -264,4 +264,72 @@ mod test {
             linear_at(&point, &two_hills_interval)
         );
     }
+
+    #[test]
+    fn test_flat_fill_layer_one_hill() {
+        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/one_hill.png");
+        let (contour_lines, w, h) =
+            contour_line::get_contour_line_tree_from(file_path.to_str().unwrap());
+        let heightmap = HeightMap::new_flat(contour_lines, w as usize, h as usize);
+
+        // x=15, y=79
+        assert_eq!(heightmap.data[79][15].unwrap(), 0);
+
+        // x=157, y=182
+        assert_eq!(heightmap.data[182][157].unwrap(), contour_line::GAP);
+
+        // x=185, y=109
+        assert_eq!(heightmap.data[109][185].unwrap(), contour_line::GAP * 2);
+
+        // x=110, y=85
+        assert_eq!(heightmap.data[85][110].unwrap(), contour_line::GAP * 3);
+
+        // x=128, y=89
+        assert_eq!(heightmap.data[89][128].unwrap(), contour_line::GAP * 4);
+    }
+
+    #[test]
+    fn test_flat_fill_layer_two_hills() {
+        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.png");
+        let (contour_lines, w, h) =
+            contour_line::get_contour_line_tree_from(file_path.to_str().unwrap());
+        let heightmap = HeightMap::new_flat(contour_lines, w as usize, h as usize);
+
+        // x=24, y=185
+        assert_eq!(heightmap.data[185][24].unwrap(), 0);
+
+        // x=148, y=174
+        assert_eq!(heightmap.data[174][148].unwrap(), contour_line::GAP);
+
+        // x=110, y=164
+        assert_eq!(heightmap.data[164][110].unwrap(), contour_line::GAP * 2);
+
+        // x=129, y=147
+        assert_eq!(heightmap.data[147][129].unwrap(), contour_line::GAP * 3);
+        // x=174, y=114
+        assert_eq!(heightmap.data[114][174].unwrap(), contour_line::GAP * 3);
+
+        // x=177, y=122
+        assert_eq!(heightmap.data[122][177].unwrap(), contour_line::GAP * 4);
+        // x=133, y=110
+        assert_eq!(heightmap.data[110][133].unwrap(), contour_line::GAP * 4);
+
+        // x=121, y=104
+        assert_eq!(heightmap.data[104][121].unwrap(), contour_line::GAP * 5);
+        // x=197, y=161
+        assert_eq!(heightmap.data[161][197].unwrap(), contour_line::GAP * 5);
+
+        // x=194, y=132
+        assert_eq!(heightmap.data[132][194].unwrap(), contour_line::GAP * 6);
+        // x=113, y=122
+        assert_eq!(heightmap.data[122][113].unwrap(), contour_line::GAP * 6);
+
+        // x=198, y=143
+        assert_eq!(heightmap.data[143][198].unwrap(), contour_line::GAP * 7);
+        // x=104, y=118
+        assert_eq!(heightmap.data[118][104].unwrap(), contour_line::GAP * 7);
+
+        // x=91, y=111
+        assert_eq!(heightmap.data[111][91].unwrap(), contour_line::GAP * 8);
+    }
 }
