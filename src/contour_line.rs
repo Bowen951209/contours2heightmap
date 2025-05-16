@@ -105,6 +105,26 @@ impl RTreeObject for ContourLine {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct ContourLineInterval<'a> {
+    outer: Option<&'a ContourLine>,
+    inner: Option<&'a ContourLine>,
+}
+
+impl<'a> ContourLineInterval<'a> {
+    pub fn new(outer: Option<&'a ContourLine>, inner: Option<&'a ContourLine>) -> Self {
+        Self { outer, inner }
+    }
+
+    pub fn outer(&self) -> Option<&ContourLine> {
+        self.outer
+    }
+
+    pub fn inner(&self) -> Option<&ContourLine> {
+        self.inner
+    }
+}
+
 pub fn get_contour_line_tree_from(file_path: &str) -> (RTree<ContourLine>, u32, u32) {
     // Load the image
     let dyn_img = image::open(file_path).expect("Failed to open image file");
@@ -126,9 +146,8 @@ pub fn get_contour_line_tree_from(file_path: &str) -> (RTree<ContourLine>, u32, 
 pub fn find_contour_line_interval(
     point: Point<usize>,
     contour_line_tree: &RTree<ContourLine>,
-) -> (Option<&ContourLine>, Option<&ContourLine>) {
-    let mut outside = None;
-    let inside;
+) -> ContourLineInterval {
+    let mut outer = None;
 
     // Sort by height
     let mut sorted = contour_line_tree.iter().collect::<Vec<_>>();
@@ -138,8 +157,8 @@ pub fn find_contour_line_interval(
 
     for cl in sorted {
         if cl.is_point_inside(&point) {
-            outside = Some(cl);
-        } else if let Some(inside) = outside {
+            outer = Some(cl);
+        } else if let Some(inside) = outer {
             if inside.envelope().contains_envelope(&cl.envelope()) {
                 if inside.height().unwrap() != cl.height().unwrap() - GAP {
                     break;
@@ -149,7 +168,7 @@ pub fn find_contour_line_interval(
         }
     }
 
-    inside = inside_candidates
+    let inner = inside_candidates
         .iter()
         .min_by(|a, b| {
             a.find_nearest_distance(&point)
@@ -158,7 +177,7 @@ pub fn find_contour_line_interval(
         })
         .map(|v| *v);
 
-    (inside, outside)
+    ContourLineInterval { outer, inner }
 }
 
 fn retain_outer<T>(contours: &mut Vec<Contour<T>>) {
@@ -254,13 +273,13 @@ mod tests {
         let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.png");
         let (tree, _, _) = get_contour_line_tree_from(file_path.to_str().unwrap());
 
-        let (inside, outside) = find_contour_line_interval(Point::new(242, 184), &tree);
-        assert_eq!(outside.unwrap().height().unwrap(), GAP);
-        assert_eq!(inside.unwrap().height().unwrap(), GAP * 2);
+        let interval = find_contour_line_interval(Point::new(242, 184), &tree);
+        assert_eq!(interval.outer.unwrap().height().unwrap(), GAP);
+        assert_eq!(interval.inner.unwrap().height().unwrap(), GAP * 2);
 
-        let (inside, outside) = find_contour_line_interval(Point::new(151, 135), &tree);
-        assert_eq!(outside.unwrap().height().unwrap(), GAP * 2);
-        assert_eq!(inside.unwrap().height().unwrap(), GAP * 3);
+        let interval = find_contour_line_interval(Point::new(151, 135), &tree);
+        assert_eq!(interval.outer.unwrap().height().unwrap(), GAP * 2);
+        assert_eq!(interval.inner.unwrap().height().unwrap(), GAP * 3);
     }
 
     #[test]
@@ -268,16 +287,17 @@ mod tests {
         let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.png");
         let (tree, _, _) = get_contour_line_tree_from(file_path.to_str().unwrap());
 
-        let (inside, _) = find_contour_line_interval(Point::new(232, 117), &tree);
-        let inside = inside.unwrap();
+        let inner = find_contour_line_interval(Point::new(232, 117), &tree)
+            .inner
+            .unwrap();
 
         let another_gap_3: Vec<&ContourLine> = tree
             .iter()
-            .filter(|cl| cl.height().unwrap() == GAP * 3 && !ptr::eq(*cl, inside))
+            .filter(|cl| cl.height().unwrap() == GAP * 3 && !ptr::eq(*cl, inner))
             .collect();
         assert_eq!(another_gap_3.len(), 1);
 
-        assert!(inside.bbox.area() < another_gap_3[0].bbox.area());
+        assert!(inner.bbox.area() < another_gap_3[0].bbox.area());
     }
 
     #[test]
@@ -285,16 +305,17 @@ mod tests {
         let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.png");
         let (tree, _, _) = get_contour_line_tree_from(file_path.to_str().unwrap());
 
-        let (inside, _) = find_contour_line_interval(Point::new(151, 119), &tree);
-        let inside = inside.unwrap();
+        let inner = find_contour_line_interval(Point::new(151, 119), &tree)
+            .inner
+            .unwrap();
 
         let another_gap_3: Vec<&ContourLine> = tree
             .iter()
-            .filter(|cl| cl.height().unwrap() == GAP * 3 && !ptr::eq(*cl, inside))
+            .filter(|cl| cl.height().unwrap() == GAP * 3 && !ptr::eq(*cl, inner))
             .collect();
         assert_eq!(another_gap_3.len(), 1);
 
-        assert!(inside.bbox.area() > another_gap_3[0].bbox.area());
+        assert!(inner.bbox.area() > another_gap_3[0].bbox.area());
     }
 
     #[test]

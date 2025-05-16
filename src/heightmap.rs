@@ -8,7 +8,7 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelI
 use rstar::RTree;
 use std::{collections::VecDeque, vec};
 
-use crate::contour_line::{ContourLine, find_contour_line_interval};
+use crate::contour_line::{ContourLine, ContourLineInterval, find_contour_line_interval};
 
 pub struct HeightMap {
     pub data: Vec<Vec<Option<i32>>>,
@@ -79,9 +79,10 @@ impl HeightMap {
                     continue;
                 }
 
-                let (_, outside) =
+                let interval =
                     find_contour_line_interval(Point::new(x, y), &self.contour_line_tree);
-                let height = match outside {
+
+                let height = match interval.outer() {
                     Some(outside) => outside.height().unwrap(),
                     None => 0,
                 };
@@ -97,8 +98,7 @@ impl HeightMap {
     fn linear_fill(&mut self) {
         let w = self.data[0].len();
         let h = self.data.len();
-        let mut intervals: Vec<Vec<Option<(Option<&ContourLine>, Option<&ContourLine>)>>> =
-            vec![vec![None; w]; h];
+        let mut intervals = vec![vec![None; w]; h];
 
         // Progress bar
         let m = MultiProgress::new();
@@ -116,7 +116,7 @@ impl HeightMap {
         pb1.set_message("Setting points on contour lines...");
         for cl in &self.contour_line_tree {
             for p in &cl.contour().points {
-                intervals[p.y][p.x] = Some((Some(cl), Some(cl)));
+                intervals[p.y][p.x] = Some(ContourLineInterval::new(Some(cl), Some(cl)));
             }
         }
 
@@ -144,7 +144,7 @@ impl HeightMap {
             row.iter_mut().enumerate().for_each(|(x, val)| {
                 if val.is_none() {
                     let interval = intervals[y][x].expect("interval should exist");
-                    let height = linear_at(&Point::new(x, y), interval);
+                    let height = linear_at(&Point::new(x, y), &interval);
                     *val = Some(height);
                 }
                 pb2.inc(1);
@@ -198,19 +198,18 @@ fn flood_fill<T: Clone>(data: &mut [Vec<Option<T>>], x: usize, y: usize, replace
     }
 }
 
-fn linear_at(point: &Point<usize>, interval: (Option<&ContourLine>, Option<&ContourLine>)) -> i32 {
-    let (inside, outside) = interval;
-    if let (Some(outside), Some(inside)) = (outside, inside) {
-        let outside_height = outside.height().unwrap();
-        let inside_height = inside.height().unwrap();
-        let distance_outside = outside.find_nearest_distance(point);
-        let distance_inside = inside.find_nearest_distance(point);
+fn linear_at(point: &Point<usize>, interval: &ContourLineInterval) -> i32 {
+    if let (Some(outer), Some(inner)) = (interval.outer(), interval.inner()) {
+        let outside_height = outer.height().unwrap();
+        let inside_height = inner.height().unwrap();
+        let distance_outside = outer.find_nearest_distance(point);
+        let distance_inside = inner.find_nearest_distance(point);
         let distance_whole = distance_outside + distance_inside;
         let t = distance_outside / distance_whole;
         return lerp(outside_height, inside_height, t) as i32;
     }
 
-    match outside {
+    match interval.outer() {
         Some(cl) => cl.height().unwrap(),
         None => 0,
     }
@@ -261,8 +260,8 @@ mod test {
             contour_line::find_contour_line_interval(point, &two_hills_heightmap.contour_line_tree);
 
         assert_eq!(
-            linear_at(&point, one_hill_removed_interval),
-            linear_at(&point, two_hills_interval)
+            linear_at(&point, &one_hill_removed_interval),
+            linear_at(&point, &two_hills_interval)
         );
     }
 }
