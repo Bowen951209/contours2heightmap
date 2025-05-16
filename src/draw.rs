@@ -3,12 +3,13 @@ use imageproc::definitions::Clamp;
 use imageproc::drawing::Canvas;
 use imageproc::image::{GrayImage, Pixel, Rgb, RgbImage};
 use imageproc::map::map_colors;
+use rstar::RTree;
 
 use crate::contour_line::ContourLine;
 
 pub fn draw_contour_lines_with_text(
     image: &mut RgbImage,
-    contour_lines: &[ContourLine],
+    contour_lines: &RTree<ContourLine>,
     font: &impl Font,
 ) {
     for contour_line in contour_lines {
