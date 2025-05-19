@@ -1,6 +1,6 @@
 use imageproc::{
     drawing::Canvas,
-    image::{GrayImage, Luma},
+    image::{GrayImage, Luma, Rgb, RgbImage},
     point::Point,
 };
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -40,6 +40,21 @@ impl HeightMap {
                 let val = self.data[y][x].unwrap();
                 let gray = self.height_to_u8(val);
                 image.draw_pixel(x as u32, y as u32, Luma([gray]));
+            }
+        }
+
+        image
+    }
+
+    pub fn to_rgb_image(&self) -> RgbImage {
+        let w = self.data[0].len();
+        let h = self.data.len();
+        let mut image = RgbImage::new(w as u32, h as u32);
+        for y in 0..h {
+            for x in 0..w {
+                let val = self.data[y][x].unwrap();
+                let rgb = self.height_to_rgb(val);
+                image.draw_pixel(x as u32, y as u32, rgb);
             }
         }
 
@@ -165,6 +180,16 @@ impl HeightMap {
 
     fn height_to_u8(&self, h: i32) -> u8 {
         (h as f32 / self.max_height as f32 * 255.0) as u8
+    }
+
+    fn height_to_rgb(&self, h: i32) -> Rgb<u8> {
+        let t = h as f32 / self.max_height as f32;
+
+        let r = lerp(128, 255, t) as u8;
+        let g = lerp(0, 0, t) as u8;
+        let b = lerp(128, 0, t) as u8;
+
+        Rgb([r, g, b])
     }
 }
 

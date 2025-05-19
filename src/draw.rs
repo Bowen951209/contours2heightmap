@@ -1,8 +1,7 @@
 use ab_glyph::{Font, PxScale, ScaleFont};
 use imageproc::definitions::Clamp;
 use imageproc::drawing::Canvas;
-use imageproc::image::{GrayImage, Pixel, Rgb, RgbImage};
-use imageproc::map::map_colors;
+use imageproc::image::{Pixel, Rgb, RgbImage};
 use rstar::RTree;
 
 use crate::contour_line::ContourLine;
@@ -69,8 +68,4 @@ pub fn measure_text(scale: impl Into<PxScale>, font: &impl Font, text: &str) -> 
     let height = scaled_font.ascent() - scaled_font.descent();
 
     (width, height)
-}
-
-pub fn gray_to_rgb(gray_image: &GrayImage) -> RgbImage {
-    map_colors(gray_image, |p| Rgb([p[0], p[0], p[0]]))
 }

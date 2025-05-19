@@ -7,11 +7,22 @@ use std::{env, path::PathBuf, process};
 
 use font::load_sans;
 use heightmap::HeightMap;
-use imageproc::window::display_image;
+use imageproc::{image::DynamicImage, window::display_image};
+
+enum FillMode {
+    Flat,
+    Linear,
+}
+
+enum ColorMode {
+    Gray,
+    RGB,
+}
 
 struct Config {
     file_path: String,
-    fill_mode: i32,
+    fill_mode: FillMode,
+    color_mode: ColorMode,
     output_file_path: Option<PathBuf>,
 }
 
@@ -24,31 +35,31 @@ fn main() {
     println!("Contour lines count = {}", contour_lines.size());
 
     let heightmap = match config.fill_mode {
-        0 => {
+        FillMode::Flat => {
             println!("Using flat fill.");
             HeightMap::new_flat(contour_lines, image_width as usize, image_heihgt as usize)
         }
-        1 => {
+        FillMode::Linear => {
             println!("Using linear fill");
             HeightMap::new_linear(contour_lines, image_width as usize, image_heihgt as usize)
         }
-        other => {
-            eprintln!("Incorrect fill mode: {other}");
-            process::exit(1);
-        }
     };
 
-    let font = load_sans();
-    let heightmap_gray_image = heightmap.to_gray_image();
+    let heightmap_image = match config.color_mode {
+        ColorMode::Gray => DynamicImage::from(heightmap.to_gray_image()),
+        ColorMode::RGB => DynamicImage::from(heightmap.to_rgb_image()),
+    };
+
     if let Some(output_path) = config.output_file_path {
-        heightmap_gray_image
+        heightmap_image
             .save(&output_path)
             .expect("Failed to save file.");
         println!("File saved to {:?}", &output_path);
     }
 
-    let mut canvas = draw::gray_to_rgb(&heightmap_gray_image);
+    let mut canvas = heightmap_image.into_rgb8();
 
+    let font = load_sans();
     draw::draw_contour_lines_with_text(&mut canvas, &heightmap.contour_line_tree, &font);
     display_image("Height Map", &canvas, image_width, image_heihgt);
 }
@@ -60,15 +71,38 @@ fn get_config() -> Config {
         process::exit(1);
     }
 
-    let fill_mode: i32 = env::var("FILL_MODE")
+    let fill_mode = match env::var("FILL_MODE")
         .ok()
         .and_then(|v| v.parse::<i32>().ok())
-        .unwrap_or(0);
+        .unwrap()
+    {
+        0 => FillMode::Flat,
+        1 => FillMode::Linear,
+        _ => {
+            println!("Unsupported fill mode. Using flat fill by default.");
+            FillMode::Flat
+        }
+    };
+
+    let color_mode = match env::var("COLOR_MODE")
+        .ok()
+        .and_then(|v| v.parse::<i32>().ok())
+        .unwrap()
+    {
+        0 => ColorMode::Gray,
+        1 => ColorMode::RGB,
+        _ => {
+            println!("Unsupported color mode. Using gray by default.");
+            ColorMode::Gray
+        }
+    };
 
     let output_file_path: Option<PathBuf> = env::var("OUTPUT_PATH").ok().map(PathBuf::from);
+
     Config {
         file_path: args[1].clone(),
         fill_mode,
+        color_mode,
         output_file_path,
     }
 }
