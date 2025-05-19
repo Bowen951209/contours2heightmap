@@ -71,30 +71,36 @@ fn get_config() -> Config {
         process::exit(1);
     }
 
-    let fill_mode = match env::var("FILL_MODE")
-        .ok()
-        .and_then(|v| v.parse::<i32>().ok())
-        .unwrap()
-    {
-        0 => FillMode::Flat,
-        1 => FillMode::Linear,
-        _ => {
-            println!("Unsupported fill mode. Using flat fill by default.");
+    let fill_mode = match env::var("FILL_MODE") {
+        Err(_) => {
+            println!("Fill mode not set. Using flat fill by default.");
             FillMode::Flat
         }
+
+        Ok(v) => match v.parse::<i32>().ok() {
+            Some(0) => FillMode::Flat,
+            Some(1) => FillMode::Linear,
+            _ => {
+                println!("Unsupported fill mode. Using flat fill by default.");
+                FillMode::Flat
+            }
+        },
     };
 
-    let color_mode = match env::var("COLOR_MODE")
-        .ok()
-        .and_then(|v| v.parse::<i32>().ok())
-        .unwrap()
-    {
-        0 => ColorMode::Gray,
-        1 => ColorMode::RGB,
-        _ => {
-            println!("Unsupported color mode. Using gray by default.");
+    let color_mode = match env::var("COLOR_MODE") {
+        Err(_) => {
+            println!("Color mode not set. Using gray by default.");
             ColorMode::Gray
         }
+
+        Ok(v) => match v.parse::<i32>().ok() {
+            Some(0) => ColorMode::Gray,
+            Some(1) => ColorMode::RGB,
+            _ => {
+                println!("Unsupported color mode. Using gray by default.");
+                ColorMode::Gray
+            }
+        },
     };
 
     let output_file_path: Option<PathBuf> = env::var("OUTPUT_PATH").ok().map(PathBuf::from);
