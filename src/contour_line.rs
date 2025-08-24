@@ -148,7 +148,7 @@ pub fn get_contour_line_tree_from(file_path: &str) -> (RTree<ContourLine>, u32, 
 pub fn find_contour_line_interval(
     point: Point<usize>,
     contour_line_tree: &RTree<ContourLine>,
-) -> ContourLineInterval {
+) -> ContourLineInterval<'_> {
     // Sort contour lines by height
     let mut sorted_contour_lines = contour_line_tree.iter().collect::<Vec<_>>();
     sorted_contour_lines.sort_by_key(|cl| cl.height().unwrap());
