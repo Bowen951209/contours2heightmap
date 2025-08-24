@@ -51,16 +51,17 @@ impl ContourLine {
     }
 
     pub fn find_nearest_point(&self, point: &Point<usize>) -> (&Point<usize>, f32) {
+        // Use distance squared to avoid unnecessary sqrt
         let mut min_distance = f32::MAX;
         let mut min_point = None;
         for p in &self.contour().points {
-            let distance = distance(&point, p);
+            let distance = distance_squared(&point, p);
             if distance < min_distance {
                 min_distance = distance;
                 min_point = Some(p);
             }
         }
-        (min_point.unwrap(), min_distance)
+        (min_point.unwrap(), min_distance.sqrt())
     }
 
     pub fn contour(&self) -> &Contour<usize> {
@@ -226,10 +227,10 @@ fn set_heights(tree: &mut RTree<ContourLine>) {
     }
 }
 
-fn distance(a: &Point<usize>, b: &Point<usize>) -> f32 {
+fn distance_squared(a: &Point<usize>, b: &Point<usize>) -> f32 {
     let dx = a.x as f32 - b.x as f32;
     let dy = a.y as f32 - b.y as f32;
-    (dx * dx + dy * dy).sqrt()
+    dx * dx + dy * dy
 }
 
 #[cfg(test)]
