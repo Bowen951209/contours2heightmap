@@ -1,4 +1,5 @@
 use imageproc::{
+    definitions::Image,
     drawing::Canvas,
     image::{GrayImage, Luma, Rgb, RgbImage},
     point::Point,
@@ -6,9 +7,12 @@ use imageproc::{
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use rstar::RTree;
-use std::{collections::VecDeque, vec};
+use std::{
+    collections::{HashMap, VecDeque},
+    vec,
+};
 
-use crate::contour_line::{self, ContourLine, ContourLineInterval, find_contour_line_interval};
+use crate::contour_line::{ContourLine, ContourLineInterval, GAP, find_contour_line_interval};
 
 pub struct HeightMap {
     pub data: Vec<Vec<Option<i32>>>,
@@ -121,11 +125,13 @@ impl HeightMap {
             "{percent:.2}% {bar:20.cyan/blue} {pos}/{len} [{elapsed_precise}] {msg}",
         )
         .unwrap();
-        let n = (w * h) as u64;
-        let pb1 = m.add(ProgressBar::new(n));
+        let image_size = (w * h) as u64;
+        let pb1 = m.add(ProgressBar::new(image_size));
         pb1.set_style(sty.clone());
-        let pb2 = m.add(ProgressBar::new(n));
-        pb2.set_style(sty);
+        let pb2 = m.add(ProgressBar::new(self.contour_line_tree.size() as u64));
+        pb2.set_style(sty.clone());
+        let pb3 = m.add(ProgressBar::new(image_size));
+        pb3.set_style(sty);
 
         // Set the points on contour lines to have same outer and inner. This is for building walls between different levels for the following flood fill.
         pb1.set_message("Setting points on contour lines...");
@@ -152,21 +158,66 @@ impl HeightMap {
         }
         pb1.finish_with_message("Intervals finding done.");
 
+        let distance_transforms = self.distance_transforms(pb2);
+
         // Linear fill data
-        pb2.set_message("Filling data...");
+        pb3.set_message("Filling data...");
 
         self.data.par_iter_mut().enumerate().for_each(|(y, row)| {
             row.iter_mut().enumerate().for_each(|(x, val)| {
                 if val.is_none() {
                     let interval = intervals[y][x].as_ref().expect("interval should exist");
-                    let height = linear_at(&Point::new(x, y), interval);
+                    let height = linear_at(&Point::new(x, y), interval, &distance_transforms);
                     *val = Some(height);
                 }
-                pb2.inc(1);
+                pb3.inc(1);
             });
         });
 
-        pb2.finish_with_message("linear fill done");
+        pb3.finish_with_message("linear fill done");
+    }
+
+    /// Compute the distance fields for each height of contour lines.
+    /// Return a map from height to the corresponding distance field image.
+    fn distance_transforms(&self, progress_bar: ProgressBar) -> HashMap<i32, Image<Luma<f64>>> {
+        let image_size = (self.data[0].len() as u32, self.data.len() as u32);
+        let mut transformed_images = HashMap::with_capacity(self.contour_line_tree.size());
+
+        let mut height = GAP;
+
+        loop {
+            let mut found = false;
+            let mut image = GrayImage::new(image_size.0, image_size.1);
+
+            for cl in self
+                .contour_line_tree
+                .iter()
+                .filter(|cl| cl.height().unwrap() == height)
+            {
+                found = true;
+
+                // draw the contour line to the image
+                for p in &cl.contour().points {
+                    image.draw_pixel(p.x as u32, p.y as u32, Luma([255u8]));
+                }
+
+                let transformed =
+                    imageproc::distance_transform::euclidean_squared_distance_transform(&image);
+                transformed_images.insert(height, transformed);
+
+                progress_bar.inc(1);
+            }
+
+            // break if no more contours found
+            if !found {
+                break;
+            }
+
+            height += GAP;
+        }
+
+        progress_bar.finish_with_message("Distance transforms done.");
+        transformed_images
     }
 
     /// Set the points and height value to `data` for each contour line.
@@ -223,22 +274,38 @@ fn flood_fill<T: Clone>(data: &mut [Vec<Option<T>>], x: usize, y: usize, replace
     }
 }
 
-fn linear_at(point: &Point<usize>, interval: &ContourLineInterval) -> i32 {
-    if let (Some(outer), inners) = (interval.outer(), interval.inners()) {
-        if !inners.is_empty() {
-            let outer_height = outer.height().unwrap();
-            let distance_to_outer = outer.find_nearest_distance_squared(point).sqrt();
+fn linear_at(
+    point: &Point<usize>,
+    interval: &ContourLineInterval,
+    distance_transforms: &HashMap<i32, Image<Luma<f64>>>,
+) -> i32 {
+    let (Some(outer), inners) = (interval.outer(), interval.inners()) else {
+        return 0;
+    };
 
-            let inner_height = inners[0].height().unwrap();
-            let distance_to_inner =
-                contour_line::find_nearest_distance_squared(point, inners).sqrt();
-            let total_distance = distance_to_outer + distance_to_inner;
-            let t = distance_to_outer / total_distance;
-            return lerp(outer_height, inner_height, t) as i32;
-        }
+    if inners.is_empty() {
+        return outer.height().unwrap();
     }
 
-    interval.outer().map_or(0, |cl| cl.height().unwrap())
+    let outer_height = outer.height().unwrap();
+    let distance_to_outer = distance_transforms
+        .get(&outer_height)
+        .unwrap()
+        .get_pixel(point.x as u32, point.y as u32)
+        .0[0]
+        .sqrt();
+
+    let inner_height = inners[0].height().unwrap();
+    let distance_to_inner = distance_transforms
+        .get(&inner_height)
+        .unwrap()
+        .get_pixel(point.x as u32, point.y as u32)
+        .0[0]
+        .sqrt();
+
+    let total_distance = distance_to_outer + distance_to_inner;
+    let t = distance_to_outer / total_distance;
+    return lerp(outer_height, inner_height, t as f32) as i32;
 }
 
 fn lerp(a: i32, b: i32, t: f32) -> f32 {
@@ -250,6 +317,7 @@ mod test {
     use std::path::Path;
 
     use imageproc::point::Point;
+    use indicatif::ProgressBar;
 
     use crate::{
         contour_line,
@@ -286,9 +354,22 @@ mod test {
         let two_hills_interval =
             contour_line::find_contour_line_interval(point, &two_hills_heightmap.contour_line_tree);
 
+        let dummy_progress_bar = ProgressBar::new(100);
+
+        let distance_transforms_one_hill_removed =
+            one_hill_removed_heightmap.distance_transforms(dummy_progress_bar.clone());
+
         assert_eq!(
-            linear_at(&point, &one_hill_removed_interval),
-            linear_at(&point, &two_hills_interval)
+            linear_at(
+                &point,
+                &one_hill_removed_interval,
+                &distance_transforms_one_hill_removed
+            ),
+            linear_at(
+                &point,
+                &two_hills_interval,
+                &two_hills_heightmap.distance_transforms(dummy_progress_bar)
+            )
         );
     }
 

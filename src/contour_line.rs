@@ -50,15 +50,6 @@ impl ContourLine {
         hit_count % 2 == 1
     }
 
-    pub fn find_nearest_distance_squared(&self, point: &Point<usize>) -> f32 {
-        self.contour
-            .points
-            .iter()
-            .map(|p| distance_squared(point, p))
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap()
-    }
-
     pub fn contour(&self) -> &Contour<usize> {
         &self.contour
     }
@@ -175,17 +166,6 @@ pub fn find_contour_line_interval(
     }
 }
 
-pub fn find_nearest_distance_squared<'a>(
-    point: &Point<usize>,
-    contour_lines: &'a [&ContourLine],
-) -> f32 {
-    contour_lines
-        .iter()
-        .map(|cl| cl.find_nearest_distance_squared(point))
-        .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap()
-}
-
 fn retain_outer<T>(contours: &mut Vec<Contour<T>>) {
     contours.retain(|c| c.border_type == BorderType::Outer);
 }
@@ -215,12 +195,6 @@ fn set_heights(tree: &mut RTree<ContourLine>) {
     for (cl, height) in tree.iter_mut().zip(heights) {
         cl.height = Some(height);
     }
-}
-
-fn distance_squared(a: &Point<usize>, b: &Point<usize>) -> f32 {
-    let dx = a.x as f32 - b.x as f32;
-    let dy = a.y as f32 - b.y as f32;
-    dx * dx + dy * dy
 }
 
 #[cfg(test)]
