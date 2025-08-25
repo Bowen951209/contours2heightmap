@@ -227,10 +227,11 @@ fn linear_at(point: &Point<usize>, interval: &ContourLineInterval) -> i32 {
     if let (Some(outer), inners) = (interval.outer(), interval.inners()) {
         if !inners.is_empty() {
             let outer_height = outer.height().unwrap();
-            let (_, distance_to_outer) = outer.find_nearest_point(point);
+            let distance_to_outer = outer.find_nearest_distance_squared(point).sqrt();
 
             let inner_height = inners[0].height().unwrap();
-            let (_, distance_to_inner) = contour_line::find_nearest_point(point, inners);
+            let distance_to_inner =
+                contour_line::find_nearest_distance_squared(point, inners).sqrt();
             let total_distance = distance_to_outer + distance_to_inner;
             let t = distance_to_outer / total_distance;
             return lerp(outer_height, inner_height, t) as i32;

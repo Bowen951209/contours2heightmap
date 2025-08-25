@@ -50,18 +50,13 @@ impl ContourLine {
         hit_count % 2 == 1
     }
 
-    pub fn find_nearest_point(&self, point: &Point<usize>) -> (&Point<usize>, f32) {
-        // Use distance squared to avoid unnecessary sqrt
-        let mut min_distance = f32::MAX;
-        let mut min_point = None;
-        for p in &self.contour().points {
-            let distance = distance_squared(&point, p);
-            if distance < min_distance {
-                min_distance = distance;
-                min_point = Some(p);
-            }
-        }
-        (min_point.unwrap(), min_distance.sqrt())
+    pub fn find_nearest_distance_squared(&self, point: &Point<usize>) -> f32 {
+        self.contour
+            .points
+            .iter()
+            .map(|p| distance_squared(point, p))
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap()
     }
 
     pub fn contour(&self) -> &Contour<usize> {
@@ -180,20 +175,15 @@ pub fn find_contour_line_interval(
     }
 }
 
-pub fn find_nearest_point<'a>(
+pub fn find_nearest_distance_squared<'a>(
     point: &Point<usize>,
     contour_lines: &'a [&ContourLine],
-) -> (&'a Point<usize>, f32) {
-    let mut min_distance = f32::MAX;
-    let mut min_point = None;
-    for cl in contour_lines {
-        let (p, d) = cl.find_nearest_point(point);
-        if d < min_distance {
-            min_distance = d;
-            min_point = Some(p);
-        }
-    }
-    (min_point.unwrap(), min_distance)
+) -> f32 {
+    contour_lines
+        .iter()
+        .map(|cl| cl.find_nearest_distance_squared(point))
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap()
 }
 
 fn retain_outer<T>(contours: &mut Vec<Contour<T>>) {
