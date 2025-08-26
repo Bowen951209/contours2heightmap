@@ -4,15 +4,20 @@ use imageproc::{
     image::{GrayImage, Luma, Rgb, RgbImage},
     point::Point,
 };
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use rstar::RTree;
-use std::{
-    collections::{HashMap, VecDeque},
-    vec,
-};
+use std::{collections::VecDeque, vec};
 
 use crate::contour_line::{ContourLine, ContourLineInterval, GAP, find_contour_line_interval};
+
+/// The mode of distance calculation.
+/// This is for [`HeightMap::distance_transform`]
+/// , where you can decide whether you want to generate
+/// a distance field to the nearest **inner** or **outer** contour line.
+#[derive(Debug, Clone, Copy)]
+enum DistanceMode {
+    ToInner,
+    ToOuter,
+}
 
 pub struct HeightMap {
     pub data: Vec<Vec<Option<i32>>>,
@@ -65,7 +70,10 @@ impl HeightMap {
         image
     }
 
-    /// Create a new `HeightMap` with contour lines drawn on it. It simply calls `draw_contour_lines` to set the points and height value to `data` for each contour line.
+    /// Create a new [`HeightMap`] with contour lines drawn on it.
+    ///
+    /// It simply calls [`HeightMap::draw_contour_lines`] to set
+    /// the points and height value to [`HeightMap::data`] for each contour line.
     fn new_with_contour_lines_drawn(
         contour_line_tree: RTree<ContourLine>,
         w: usize,
@@ -85,9 +93,7 @@ impl HeightMap {
         heightmap.draw_contour_lines();
         heightmap
     }
-}
 
-impl HeightMap {
     fn flat_fill(&mut self) {
         let w = self.data[0].len();
         let h = self.data.len();
@@ -117,107 +123,167 @@ impl HeightMap {
     fn linear_fill(&mut self) {
         let w = self.data[0].len();
         let h = self.data.len();
-        let mut intervals = vec![vec![None; w]; h];
 
-        // Progress bar
-        let m = MultiProgress::new();
-        let sty = ProgressStyle::with_template(
-            "{percent:.2}% {bar:20.cyan/blue} {pos}/{len} [{elapsed_precise}] {msg}",
-        )
-        .unwrap();
-        let image_size = (w * h) as u64;
-        let pb1 = m.add(ProgressBar::new(image_size));
-        pb1.set_style(sty.clone());
-        let pb2 = m.add(ProgressBar::new(self.contour_line_tree.size() as u64));
-        pb2.set_style(sty.clone());
-        let pb3 = m.add(ProgressBar::new(image_size));
-        pb3.set_style(sty);
+        // A map where you can look up what are a pixel's inner and outer contour lines
+        let mut interval_map = vec![vec![None; w]; h];
 
-        // Set the points on contour lines to have same outer and inner. This is for building walls between different levels for the following flood fill.
-        pb1.set_message("Setting points on contour lines...");
+        // Set the points on contour lines to have same outer and inner.
+        // This is for building walls between different levels for the following flood fill.
         for cl in &self.contour_line_tree {
             for p in &cl.contour().points {
-                intervals[p.y][p.x] = Some(ContourLineInterval::new(cl, cl));
+                interval_map[p.y][p.x] = Some(ContourLineInterval::new(cl, cl));
             }
         }
 
-        // Use flood fill to set intervals
-        pb1.set_message("Finding intervals for points...");
+        // Flood fill interval_map
         for y in 0..h {
             for x in 0..w {
-                pb1.inc(1);
-                if intervals[y][x].is_some() {
+                if interval_map[y][x].is_some() {
                     continue;
                 }
 
                 let interval =
                     find_contour_line_interval(Point::new(x, y), &self.contour_line_tree);
-                flood_fill(&mut intervals, x, y, interval);
-                pb1.set_message(format!("flood fill at ({}, {})", x, y));
+
+                flood_fill(&mut interval_map, x, y, interval);
             }
         }
-        pb1.finish_with_message("Intervals finding done.");
 
-        let distance_transforms = self.distance_transforms(pb2);
+        // Generate distance fields
 
-        // Linear fill data
-        pb3.set_message("Filling data...");
+        // Each pixel stores the squared distance to the nearest OUTER contour line
+        let mut outer_distance_field = Image::new(w as u32, h as u32);
+        self.euclidean_distance_transform(
+            &interval_map,
+            &mut outer_distance_field,
+            DistanceMode::ToOuter,
+        );
 
-        self.data.par_iter_mut().enumerate().for_each(|(y, row)| {
-            row.iter_mut().enumerate().for_each(|(x, val)| {
-                if val.is_none() {
-                    let interval = intervals[y][x].as_ref().expect("interval should exist");
-                    let height = linear_at(&Point::new(x, y), interval, &distance_transforms);
-                    *val = Some(height);
-                }
-                pb3.inc(1);
-            });
-        });
+        // Each pixel stores the squared distance to the nearest INNER contour line
+        let mut inner_distance_field = Image::new(w as u32, h as u32);
+        self.euclidean_distance_transform(
+            &interval_map,
+            &mut inner_distance_field,
+            DistanceMode::ToInner,
+        );
 
-        pb3.finish_with_message("linear fill done");
+        // Linear interpolation and fill to self.data
+        for y in 0..h {
+            for x in 0..w {
+                let point = Point::new(x, y);
+                let interval = interval_map[y][x].as_ref().unwrap();
+                let val = linear_at(
+                    &point,
+                    interval,
+                    &outer_distance_field,
+                    &inner_distance_field,
+                );
+                self.data[y][x] = Some(val as i32);
+            }
+        }
     }
 
-    /// Compute the distance fields for each height of contour lines.
-    /// Return a map from height to the corresponding distance field image.
-    fn distance_transforms(&self, progress_bar: ProgressBar) -> HashMap<i32, Image<Luma<f64>>> {
-        let image_size = (self.data[0].len() as u32, self.data.len() as u32);
-        let mut transformed_images = HashMap::with_capacity(self.contour_line_tree.size());
+    /// Computes the squared Euclidean distance field and writes it to `buffer` in linear time.
+    /// The algorithm is based on [Distance Transforms of Sampled Functions].
+    ///
+    /// This is not a direct use of [`imageproc::distance_transform::euclidean_squared_distance_transform`]
+    /// because more control is required.
+    ///
+    /// This function calculates the distance from each pixel to the nearest outer or inner contour line,
+    /// depending on the `distance_mode` parameter.
+    ///
+    /// Unlike traditional distance transforms that generate a distance field from static features,
+    /// this implementation builds the field layer by layer, where each layer corresponds to the region
+    /// between contour lines.
+    ///
+    /// Alternatively, you could build separate distance fields for each contour line height (as in [738b3e1]),
+    /// but that approach computes unnecessary pixels and uses more time and memory.
+    ///
+    /// [738b3e1]: https://github.com/Bowen951209/contours2heightmap/commit/738b3e10e5a4b0a5bf77b76e7a9bec5e16e28e65
+    /// [Distance Transforms of Sampled Functions]: https://www.cs.cornell.edu/~dph/papers/dt.pdf
+    fn euclidean_distance_transform(
+        &self,
+        interval_map: &Vec<Vec<Option<ContourLineInterval>>>,
+        buffer: &mut Image<Luma<f32>>,
+        distance_mode: DistanceMode,
+    ) {
+        let (w, h) = buffer.dimensions();
+        let (w, h) = (w as usize, h as usize);
 
-        let mut height = GAP;
+        // Put these buffer outside the loop to avoid reallocating them every iteration
+        let mut y_envelope = Envelope::new(h);
+        let mut y_result_buffer = vec![f32::NAN; h];
+        let mut x_envelope = Envelope::new(w);
+        let mut x_result_buffer = vec![f32::NAN; w];
 
-        loop {
-            let mut found = false;
-            let mut image = GrayImage::new(image_size.0, image_size.1);
+        // Loop through each height level.
+        // Regions regarding the current height will be filled.
+        let mut current_height = GAP;
+        while current_height <= self.max_height {
+            for x in 0..w {
+                // `f` is directly named from the paper.
+                // Return 0 if a point is a "feature" or "boundary", and INFINITY otherwise.
+                // Basically the algorithm is trying to minimize values, so adding INFINITY
+                // is to avoid minimizing on a non-feature point.
+                let f = |y: usize| {
+                    let interval = interval_map[y][x].as_ref().unwrap();
+                    let point = Point::new(x, y);
 
-            for cl in self
-                .contour_line_tree
-                .iter()
-                .filter(|cl| cl.height().unwrap() == height)
-            {
-                found = true;
+                    match distance_mode {
+                        DistanceMode::ToInner => {
+                            if interval
+                                .inners()
+                                .iter()
+                                .any(|inner| inner.contour().points.contains(&point))
+                            {
+                                0.0
+                            } else {
+                                f32::INFINITY
+                            }
+                        }
 
-                // draw the contour line to the image
-                for p in &cl.contour().points {
-                    image.draw_pixel(p.x as u32, p.y as u32, Luma([255u8]));
+                        DistanceMode::ToOuter => interval
+                            .outer()
+                            .filter(|outer| outer.contour().points.contains(&point))
+                            .map(|_| 0.0)
+                            .unwrap_or(f32::INFINITY),
+                    }
+                };
+
+                // Because we don't need the whole buffer to be filled in reference to the current height,
+                // we can ignore certain pixels. If a pixel's interval is not the interval this iteration
+                // is dealing with, we can skip it.
+                let ignore =
+                    |y| is_height_match(x, y, &interval_map, current_height, distance_mode);
+
+                distance_transform_1d(&f, &mut y_envelope, &mut y_result_buffer, &ignore);
+
+                // copy column buffer (y_result_buffer) to main buffer
+                for y in 0..h {
+                    if !ignore(y) {
+                        // Only copy the not ignored pixels. Do not overwrite other pixels.
+                        buffer.put_pixel(x as u32, y as u32, Luma([y_result_buffer[y]]));
+                    }
                 }
-
-                let transformed =
-                    imageproc::distance_transform::euclidean_squared_distance_transform(&image);
-                transformed_images.insert(height, transformed);
-
-                progress_bar.inc(1);
             }
 
-            // break if no more contours found
-            if !found {
-                break;
+            for y in 0..h {
+                let f = |x| buffer.get_pixel(x as u32, y as u32).0[0] as f32;
+                let ignore =
+                    |x| is_height_match(x, y, &interval_map, current_height, distance_mode);
+
+                distance_transform_1d(&f, &mut x_envelope, &mut x_result_buffer, &ignore);
+
+                // copy from buffer to data
+                for x in 0..w {
+                    if !ignore(x) {
+                        buffer.put_pixel(x as u32, y as u32, Luma([x_result_buffer[x]]));
+                    }
+                }
             }
 
-            height += GAP;
+            current_height += GAP;
         }
-
-        progress_bar.finish_with_message("Distance transforms done.");
-        transformed_images
     }
 
     /// Set the points and height value to `data` for each contour line.
@@ -244,6 +310,25 @@ impl HeightMap {
     }
 }
 
+/// The parabola lower-envelope structure describe in
+/// [Distance Transforms of Sampled Functions](https://www.cs.cornell.edu/~dph/papers/dt.pdf)
+struct Envelope {
+    /// x coordinates of the parabola lowest points
+    v: Vec<usize>,
+    /// x coordinates of parabola intersections
+    z: Vec<f32>,
+}
+
+impl Envelope {
+    fn new(n: usize) -> Self {
+        Self {
+            v: vec![0; n],
+            z: vec![f32::NAN; n + 1],
+        }
+    }
+}
+
+// TODO: Fix flood fill performance.
 fn flood_fill<T: Clone>(data: &mut [Vec<Option<T>>], x: usize, y: usize, replacement_value: T) {
     let w = data[0].len();
     let h = data.len();
@@ -277,7 +362,8 @@ fn flood_fill<T: Clone>(data: &mut [Vec<Option<T>>], x: usize, y: usize, replace
 fn linear_at(
     point: &Point<usize>,
     interval: &ContourLineInterval,
-    distance_transforms: &HashMap<i32, Image<Luma<f64>>>,
+    outer_distance_field: &Image<Luma<f32>>,
+    inner_distance_field: &Image<Luma<f32>>,
 ) -> i32 {
     let (Some(outer), inners) = (interval.outer(), interval.inners()) else {
         return 0;
@@ -288,17 +374,13 @@ fn linear_at(
     }
 
     let outer_height = outer.height().unwrap();
-    let distance_to_outer = distance_transforms
-        .get(&outer_height)
-        .unwrap()
+    let distance_to_outer = outer_distance_field
         .get_pixel(point.x as u32, point.y as u32)
         .0[0]
         .sqrt();
 
     let inner_height = inners[0].height().unwrap();
-    let distance_to_inner = distance_transforms
-        .get(&inner_height)
-        .unwrap()
+    let distance_to_inner = inner_distance_field
         .get_pixel(point.x as u32, point.y as u32)
         .0[0]
         .sqrt();
@@ -312,17 +394,113 @@ fn lerp(a: i32, b: i32, t: f32) -> f32 {
     a as f32 * (1.0 - t) + b as f32 * t
 }
 
+/// Based on [Distance Transforms of Sampled Functions](https://www.cs.cornell.edu/~dph/papers/dt.pdf).
+fn distance_transform_1d(
+    f: &impl Fn(usize) -> f32,
+    envelope: &mut Envelope,
+    result: &mut [f32],
+    ignore: &impl Fn(usize) -> bool,
+) {
+    let n = result.len();
+
+    // Index of rightmost parabola
+    let mut k = 0;
+
+    // x coordinates of the parabola lowest points
+    let v = &mut envelope.v;
+    v[0] = 0;
+
+    // x coordinates of parabola intersections
+    let z = &mut envelope.z;
+    z[0] = f32::NEG_INFINITY;
+    z[1] = f32::INFINITY;
+
+    for q in 1..n {
+        if ignore(q) {
+            continue;
+        }
+
+        if f(q) == f32::INFINITY {
+            continue;
+        }
+
+        if k == 0 && f(v[k]) == f32::INFINITY {
+            v[k] = q;
+            z[k] = f32::NEG_INFINITY;
+            z[k + 1] = f32::INFINITY;
+            continue;
+        }
+
+        let mut s = parabola_intersection(f, v[k], q);
+        while s <= z[k] {
+            k -= 1;
+            s = parabola_intersection(f, v[k], q);
+        }
+
+        k += 1;
+        v[k] = q;
+        z[k] = s;
+        z[k + 1] = f32::INFINITY;
+    }
+
+    k = 0;
+    for q in 0..n {
+        if ignore(q) {
+            continue;
+        }
+
+        while z[k + 1] < q as f32 {
+            k += 1;
+        }
+        let dist = q as f32 - v[k] as f32;
+        result[q] = dist * dist + f(v[k]) as f32;
+    }
+}
+
+// Modified from imageproc::distance_transform::intersection
+fn parabola_intersection(f: impl Fn(usize) -> f32, p: usize, q: usize) -> f32 {
+    // The intersection s of the two parabolas satisfies:
+    //
+    // f[q] + (q - s) ^ 2 = f[p] + (s - q) ^ 2
+    //
+    // Rearranging gives:
+    //
+    // s = [( f[q] + q ^ 2 ) - ( f[p] + p ^ 2 )] / (2q - 2p)
+    let fq = f(q);
+    let fp = f(p);
+    let p = p as f32;
+    let q = q as f32;
+
+    ((fq + q * q) - (fp + p * p)) / (2.0 * q - 2.0 * p)
+}
+
+// A very specific function for euclidean_distance_transform
+// to decide wheter to ignore a pixel.
+fn is_height_match(
+    x: usize,
+    y: usize,
+    interval_map: &Vec<Vec<Option<ContourLineInterval>>>,
+    current_height: i32,
+    distance_mode: DistanceMode,
+) -> bool {
+    let interval = interval_map[y][x].as_ref().unwrap();
+
+    match distance_mode {
+        DistanceMode::ToInner => interval
+            .inners()
+            .first()
+            .map_or(true, |inner| inner.height().unwrap() != current_height),
+        DistanceMode::ToOuter => interval
+            .outer()
+            .map_or(true, |outer| outer.height().unwrap() != current_height),
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::path::Path;
 
-    use imageproc::point::Point;
-    use indicatif::ProgressBar;
-
-    use crate::{
-        contour_line,
-        heightmap::{HeightMap, linear_at},
-    };
+    use crate::{contour_line, heightmap::HeightMap};
 
     #[test]
     fn test_one_hill_removed_and_two_hills_have_same_linear_height_at_same_point() {
@@ -330,46 +508,22 @@ mod test {
             .join("assets/one_hill_removed_from_two_hills.png");
         let (contour_lines_one_hill_removed, w, h) =
             contour_line::get_contour_line_tree_from(file_path_one_hill_removed.to_str().unwrap());
-        let one_hill_removed_heightmap = HeightMap::new_with_contour_lines_drawn(
-            contour_lines_one_hill_removed,
-            w as usize,
-            h as usize,
-        );
+        let one_hill_removed_heightmap =
+            HeightMap::new_linear(contour_lines_one_hill_removed, w as usize, h as usize);
 
         let file_path_two_hills =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.png");
         let (contour_lines_two_hills, w, h) =
             contour_line::get_contour_line_tree_from(file_path_two_hills.to_str().unwrap());
-        let two_hills_heightmap = HeightMap::new_with_contour_lines_drawn(
-            contour_lines_two_hills,
-            w as usize,
-            h as usize,
-        );
+        let two_hills_heightmap =
+            HeightMap::new_linear(contour_lines_two_hills, w as usize, h as usize);
 
-        let point = Point::new(228, 114);
-        let one_hill_removed_interval = contour_line::find_contour_line_interval(
-            point,
-            &one_hill_removed_heightmap.contour_line_tree,
-        );
-        let two_hills_interval =
-            contour_line::find_contour_line_interval(point, &two_hills_heightmap.contour_line_tree);
-
-        let dummy_progress_bar = ProgressBar::new(100);
-
-        let distance_transforms_one_hill_removed =
-            one_hill_removed_heightmap.distance_transforms(dummy_progress_bar.clone());
+        let point_y = 114;
+        let point_x = 228;
 
         assert_eq!(
-            linear_at(
-                &point,
-                &one_hill_removed_interval,
-                &distance_transforms_one_hill_removed
-            ),
-            linear_at(
-                &point,
-                &two_hills_interval,
-                &two_hills_heightmap.distance_transforms(dummy_progress_bar)
-            )
+            one_hill_removed_heightmap.data[point_y][point_x],
+            two_hills_heightmap.data[point_y][point_x]
         );
     }
 
