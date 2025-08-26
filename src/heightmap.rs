@@ -277,13 +277,15 @@ impl HeightMap {
         // Put these buffer outside the loop to avoid reallocating them every iteration
         // Be careful with these. If data are not overwrite correcctly, it may lead to incorrect results
         // Build feature and ignore maps for this height level
+
+        // TODO: See if these can be reduced. It really takes a lot memory
         let mut should_process = vec![vec![false; w]; h];
         let mut is_feature = vec![vec![false; w]; h];
 
         // Loop through each height level.
         let mut current_height = GAP;
         while current_height <= self.max_height {
-            let point_set = contour_point_sets.get(&current_height);
+            let point_set = contour_point_sets.get(&current_height).unwrap();
 
             // Parallelize the preprocessing step
             should_process
@@ -308,8 +310,7 @@ impl HeightMap {
                         process_row[x] = process_pixel;
 
                         // Check if this pixel is a feature point
-                        let is_feature_point =
-                            process_pixel && point_set.map_or(false, |ps| ps.contains(&(x, y)));
+                        let is_feature_point = process_pixel && point_set.contains(&(x, y));
 
                         feature_row[x] = is_feature_point;
                     }
@@ -349,30 +350,21 @@ impl HeightMap {
             }
 
             // Process rows (X-direction) in parallel
-            let row_results: Vec<_> = (0..h)
-                .into_par_iter()
-                .map(|y| {
-                    let mut x_envelope = Envelope::new(w);
-                    let mut x_result_buffer = vec![f32::NAN; w];
+            buffer.par_chunks_mut(w).enumerate().for_each(|(y, value)| {
+                let mut x_envelope = Envelope::new(w);
+                let mut x_result_buffer = vec![f32::NAN; w];
 
-                    let f = |x: usize| buffer.get_pixel(x as u32, y as u32).0[0];
-                    let ignore = |x: usize| !should_process[y][x];
+                let f = |x: usize| value[x];
+                let ignore = |x: usize| !should_process[y][x];
 
-                    distance_transform_1d(&f, &mut x_envelope, &mut x_result_buffer, &ignore);
+                distance_transform_1d(&f, &mut x_envelope, &mut x_result_buffer, &ignore);
 
-                    // Return the row index and results
-                    (y, x_result_buffer)
-                })
-                .collect();
-
-            // Apply row results to buffer
-            for (y, x_result_buffer) in row_results {
                 for x in 0..w {
-                    if should_process[y][x] {
-                        buffer.put_pixel(x as u32, y as u32, Luma([x_result_buffer[x]]));
+                    if !ignore(x) {
+                        value[x] = x_result_buffer[x];
                     }
                 }
-            }
+            });
 
             pb.inc(1);
             pb.set_message(format!("Distance transformed at height {current_height}"));
