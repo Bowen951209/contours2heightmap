@@ -6,7 +6,11 @@ use imageproc::{
 };
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rstar::RTree;
-use std::{borrow::Cow, collections::VecDeque, vec};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet, VecDeque},
+    vec,
+};
 
 use crate::contour_line::{ContourLine, ContourLineInterval, GAP, find_contour_line_interval};
 
@@ -250,73 +254,89 @@ impl HeightMap {
         let (w, h) = buffer.dimensions();
         let (w, h) = (w as usize, h as usize);
 
+        // Pre-build HashSets for faster point lookups
+        let mut contour_point_sets: HashMap<i32, HashSet<(usize, usize)>> = HashMap::new();
+
+        // Build point sets for each height level
+        for cl in &self.contour_line_tree {
+            let height = cl.height().unwrap();
+            let point_set = contour_point_sets
+                .entry(height)
+                .or_insert_with(HashSet::new);
+            for point in &cl.contour().points {
+                point_set.insert((point.x, point.y));
+            }
+        }
+
         // Put these buffer outside the loop to avoid reallocating them every iteration
+        // Be careful with these. If data are not overwrite correcctly, it may lead to incorrect results
         let mut y_envelope = Envelope::new(h);
         let mut y_result_buffer = vec![f32::NAN; h];
         let mut x_envelope = Envelope::new(w);
         let mut x_result_buffer = vec![f32::NAN; w];
 
+        // Build feature and ignore maps for this height level
+        let mut should_process = vec![vec![false; w]; h];
+        let mut is_feature = vec![vec![false; w]; h];
+
         // Loop through each height level.
-        // Regions regarding the current height will be filled.
         let mut current_height = GAP;
         while current_height <= self.max_height {
-            for x in 0..w {
-                // `f` is directly named from the paper.
-                // Return 0 if a point is a "feature" or "boundary", and INFINITY otherwise.
-                // Basically the algorithm is trying to minimize values, so adding INFINITY
-                // is to avoid minimizing on a non-feature point.
-                let f = |y: usize| {
+            let point_set = contour_point_sets.get(&current_height);
+
+            for y in 0..h {
+                for x in 0..w {
                     let interval = interval_map[y][x].as_ref().unwrap();
-                    let point = Point::new(x, y);
 
-                    match distance_mode {
-                        DistanceMode::ToInner => {
-                            if interval
-                                .inners()
-                                .iter()
-                                .any(|inner| inner.contour().points.contains(&point))
-                            {
-                                0.0
-                            } else {
-                                f32::INFINITY
-                            }
-                        }
-
+                    // Check if this pixel should be processed for this height level
+                    let process_pixel = match distance_mode {
+                        DistanceMode::ToInner => interval
+                            .inners()
+                            .first()
+                            .map_or(false, |inner| inner.height().unwrap() == current_height),
                         DistanceMode::ToOuter => interval
                             .outer()
-                            .filter(|outer| outer.contour().points.contains(&point))
-                            .map(|_| 0.0)
-                            .unwrap_or(f32::INFINITY),
-                    }
+                            .map_or(false, |outer| outer.height().unwrap() == current_height),
+                    };
+
+                    should_process[y][x] = process_pixel;
+
+                    // Check if this pixel is a feature point
+                    let is_feature_point =
+                        process_pixel && point_set.map_or(false, |ps| ps.contains(&(x, y)));
+
+                    is_feature[y][x] = is_feature_point;
+                }
+            }
+
+            // Process columns (Y-direction)
+            for x in 0..w {
+                let f = |y: usize| {
+                    if is_feature[y][x] { 0.0 } else { f32::INFINITY }
                 };
 
-                // Because we don't need the whole buffer to be filled in reference to the current height,
-                // we can ignore certain pixels. If a pixel's interval is not the interval this iteration
-                // is dealing with, we can skip it.
-                let ignore =
-                    |y| is_height_match(x, y, &interval_map, current_height, distance_mode);
+                let ignore = |y: usize| !should_process[y][x];
 
                 distance_transform_1d(&f, &mut y_envelope, &mut y_result_buffer, &ignore);
 
-                // copy column buffer (y_result_buffer) to main buffer
+                // Copy column buffer to main buffer
                 for y in 0..h {
-                    if !ignore(y) {
-                        // Only copy the not ignored pixels. Do not overwrite other pixels.
+                    if should_process[y][x] {
                         buffer.put_pixel(x as u32, y as u32, Luma([y_result_buffer[y]]));
                     }
                 }
             }
 
+            // Process rows (X-direction)
             for y in 0..h {
-                let f = |x| buffer.get_pixel(x as u32, y as u32).0[0] as f32;
-                let ignore =
-                    |x| is_height_match(x, y, &interval_map, current_height, distance_mode);
+                let f = |x: usize| buffer.get_pixel(x as u32, y as u32).0[0];
+                let ignore = |x: usize| !should_process[y][x];
 
                 distance_transform_1d(&f, &mut x_envelope, &mut x_result_buffer, &ignore);
 
-                // copy from buffer to data
+                // Copy row buffer to main buffer
                 for x in 0..w {
-                    if !ignore(x) {
+                    if should_process[y][x] {
                         buffer.put_pixel(x as u32, y as u32, Luma([x_result_buffer[x]]));
                     }
                 }
@@ -519,28 +539,6 @@ fn parabola_intersection(f: impl Fn(usize) -> f32, p: usize, q: usize) -> f32 {
     let q = q as f32;
 
     ((fq + q * q) - (fp + p * p)) / (2.0 * q - 2.0 * p)
-}
-
-// A very specific function for euclidean_distance_transform
-// to decide wheter to ignore a pixel.
-fn is_height_match(
-    x: usize,
-    y: usize,
-    interval_map: &Vec<Vec<Option<ContourLineInterval>>>,
-    current_height: i32,
-    distance_mode: DistanceMode,
-) -> bool {
-    let interval = interval_map[y][x].as_ref().unwrap();
-
-    match distance_mode {
-        DistanceMode::ToInner => interval
-            .inners()
-            .first()
-            .map_or(true, |inner| inner.height().unwrap() != current_height),
-        DistanceMode::ToOuter => interval
-            .outer()
-            .map_or(true, |outer| outer.height().unwrap() != current_height),
-    }
 }
 
 fn create_progress_bar(len: u64, msg: impl Into<Cow<'static, str>>) -> ProgressBar {
