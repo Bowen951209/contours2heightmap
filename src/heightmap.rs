@@ -4,8 +4,9 @@ use imageproc::{
     image::{GrayImage, Luma, Rgb, RgbImage},
     point::Point,
 };
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rstar::RTree;
-use std::{collections::VecDeque, vec};
+use std::{borrow::Cow, collections::VecDeque, vec};
 
 use crate::contour_line::{ContourLine, ContourLineInterval, GAP, find_contour_line_interval};
 
@@ -98,6 +99,8 @@ impl HeightMap {
         let w = self.data[0].len();
         let h = self.data.len();
 
+        let pb = create_progress_bar(self.contour_line_tree.size() as u64, "Flood filling");
+
         for y in 0..h {
             for x in 0..w {
                 if self.data[y][x].is_some() {
@@ -114,10 +117,12 @@ impl HeightMap {
 
                 flood_fill(&mut self.data, x, y, height);
 
-                // temp debug
-                println!("filled height {}", height);
+                pb.set_message(format!("Flood filled at ({x}, {y})"));
+                pb.inc(1);
             }
         }
+
+        pb.finish_with_message("Flat fill complete");
     }
 
     fn linear_fill(&mut self) {
@@ -129,13 +134,25 @@ impl HeightMap {
 
         // Set the points on contour lines to have same outer and inner.
         // This is for building walls between different levels for the following flood fill.
+        let multi_progress = MultiProgress::new();
+        let pb = multi_progress.add(create_progress_bar(
+            self.contour_line_tree.size() as u64,
+            "Setting contour line points in interval map",
+        ));
         for cl in &self.contour_line_tree {
             for p in &cl.contour().points {
                 interval_map[p.y][p.x] = Some(ContourLineInterval::new(cl, cl));
             }
+
+            pb.inc(1);
         }
+        pb.finish_with_message("Contour line points set");
 
         // Flood fill interval_map
+        let pb = multi_progress.add(create_progress_bar(
+            self.contour_line_tree.size() as u64,
+            "Flood filling interval map",
+        ));
         for y in 0..h {
             for x in 0..w {
                 if interval_map[y][x].is_some() {
@@ -146,28 +163,45 @@ impl HeightMap {
                     find_contour_line_interval(Point::new(x, y), &self.contour_line_tree);
 
                 flood_fill(&mut interval_map, x, y, interval);
+                pb.inc(1);
+                pb.set_message(format!("Flood filled at ({x}, {y})"));
             }
         }
+        pb.finish_with_message("Flood fill complete");
 
         // Generate distance fields
 
         // Each pixel stores the squared distance to the nearest OUTER contour line
+        let pb = multi_progress.add(create_progress_bar(
+            (self.max_height / GAP) as u64,
+            "Distance transforming to outer contour lines",
+        ));
         let mut outer_distance_field = Image::new(w as u32, h as u32);
         self.euclidean_distance_transform(
             &interval_map,
             &mut outer_distance_field,
             DistanceMode::ToOuter,
+            &pb,
         );
 
         // Each pixel stores the squared distance to the nearest INNER contour line
+        let pb = multi_progress.add(create_progress_bar(
+            (self.max_height / GAP) as u64,
+            "Distance transforming to inner contour lines",
+        ));
         let mut inner_distance_field = Image::new(w as u32, h as u32);
         self.euclidean_distance_transform(
             &interval_map,
             &mut inner_distance_field,
             DistanceMode::ToInner,
+            &pb,
         );
 
         // Linear interpolation and fill to self.data
+        let pb = multi_progress.add(create_progress_bar(
+            (w * h) as u64,
+            "Linear interpolating and filling heightmap",
+        ));
         for y in 0..h {
             for x in 0..w {
                 let point = Point::new(x, y);
@@ -179,8 +213,13 @@ impl HeightMap {
                     &inner_distance_field,
                 );
                 self.data[y][x] = Some(val as i32);
+
+                pb.inc(1);
+                pb.set_message(format!("Lerp at ({x}, {y})"));
             }
         }
+
+        pb.finish_with_message("Linear fill complete");
     }
 
     /// Computes the squared Euclidean distance field and writes it to `buffer` in linear time.
@@ -206,6 +245,7 @@ impl HeightMap {
         interval_map: &Vec<Vec<Option<ContourLineInterval>>>,
         buffer: &mut Image<Luma<f32>>,
         distance_mode: DistanceMode,
+        pb: &ProgressBar,
     ) {
         let (w, h) = buffer.dimensions();
         let (w, h) = (w as usize, h as usize);
@@ -282,8 +322,15 @@ impl HeightMap {
                 }
             }
 
+            pb.inc(1);
+            pb.set_message(format!("Distance transformed at height {current_height}"));
             current_height += GAP;
         }
+
+        pb.finish_with_message(format!(
+            "Distance transform to {:?} complete",
+            distance_mode
+        ));
     }
 
     /// Set the points and height value to `data` for each contour line.
@@ -494,6 +541,17 @@ fn is_height_match(
             .outer()
             .map_or(true, |outer| outer.height().unwrap() != current_height),
     }
+}
+
+fn create_progress_bar(len: u64, msg: impl Into<Cow<'static, str>>) -> ProgressBar {
+    ProgressBar::new(len)
+        .with_style(
+            ProgressStyle::with_template(
+                "{percent:.2}% {bar:20.cyan/blue} {pos}/{len} [{elapsed_precise}] {msg}",
+            )
+            .unwrap(),
+        )
+        .with_message(msg)
 }
 
 #[cfg(test)]
