@@ -4,7 +4,10 @@ use imageproc::{
     image::{GrayImage, Luma, Rgb, RgbImage},
     point::Point,
 };
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{
+    MultiProgress, ParallelProgressIterator, ProgressBar, ProgressFinish, ProgressStyle,
+};
+use rayon::prelude::*;
 use rstar::RTree;
 use std::{
     borrow::Cow,
@@ -202,28 +205,31 @@ impl HeightMap {
         );
 
         // Linear interpolation and fill to self.data
-        let pb = multi_progress.add(create_progress_bar(
-            (w * h) as u64,
-            "Linear interpolating and filling heightmap",
-        ));
-        for y in 0..h {
-            for x in 0..w {
-                let point = Point::new(x, y);
-                let interval = interval_map[y][x].as_ref().unwrap();
-                let val = linear_at(
-                    &point,
-                    interval,
-                    &outer_distance_field,
-                    &inner_distance_field,
-                );
-                self.data[y][x] = Some(val as i32);
+        let pb = multi_progress.add(
+            create_progress_bar((w * h) as u64, "Linear interpolating and filling heightmap")
+                .with_finish(ProgressFinish::WithMessage(Cow::Borrowed(
+                    "Linear fill complete",
+                ))),
+        );
 
-                pb.inc(1);
-                pb.set_message(format!("Lerp at ({x}, {y})"));
-            }
-        }
-
-        pb.finish_with_message("Linear fill complete");
+        // Process rows in parallel
+        self.data
+            .par_iter_mut()
+            .progress_with(pb)
+            .enumerate()
+            .for_each(|(y, row)| {
+                for x in 0..w {
+                    let point = Point::new(x, y);
+                    let interval = interval_map[y][x].as_ref().unwrap();
+                    let val = linear_at(
+                        &point,
+                        interval,
+                        &outer_distance_field,
+                        &inner_distance_field,
+                    );
+                    row[x] = Some(val as i32);
+                }
+            });
     }
 
     /// Computes the squared Euclidean distance field and writes it to `buffer` in linear time.
