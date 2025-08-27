@@ -5,83 +5,106 @@ mod heightmap;
 
 use std::{path::PathBuf, time::Instant};
 
+use clap::{Parser, ValueEnum, command};
 use font::load_sans;
 use heightmap::HeightMap;
-use imageproc::{image::DynamicImage, window::display_image};
+use imageproc::image::DynamicImage;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ValueEnum)]
 pub enum FillMode {
     Flat,
     Linear,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ValueEnum)]
 pub enum ColorMode {
     Gray,
-    RGB,
+    Rgb,
 }
 
-#[derive(Debug, Clone)]
-pub struct Config {
-    pub file_path: String,
-    pub fill_mode: FillMode,
-    pub color_mode: ColorMode,
-    pub output_file_path: Option<PathBuf>,
+#[derive(Parser)]
+#[command(name = "c2h")]
+#[command(about = "Convert contour images to heightmaps")]
+#[command(version)]
+pub struct Args {
+    /// Input contour image file
+    input_path: PathBuf,
+
+    /// Output image file
+    output_path: PathBuf,
+
+    /// Fill mode for heightmap generation
+    #[arg(short, long, value_enum, default_value_t = FillMode::Flat)]
+    fill_mode: FillMode,
+
+    /// Color mode for output
+    #[arg(short, long, value_enum, default_value_t = ColorMode::Gray)]
+    color_mode: ColorMode,
+
+    /// Draw contour lines and mark height text on the heightmap
+    #[arg(short, long, action = clap::ArgAction::Set, default_value_t = true)]
+    draw_contours: bool,
+
+    /// The height gap between contour lines
+    #[arg(short, long, default_value_t = 50)]
+    gap: i32,
 }
 
-impl Config {
-    pub fn new(
-        file_path: String,
-        fill_mode: FillMode,
-        color_mode: ColorMode,
-        output_file_path: Option<PathBuf>,
-    ) -> Self {
-        Self {
-            file_path,
-            fill_mode,
-            color_mode,
-            output_file_path,
-        }
-    }
-}
+pub fn run() {
+    let args = Args::parse();
 
-pub fn process_contours(config: Config) {
     let start = Instant::now();
     println!("Creating contour line tree...");
-    let (contour_lines, image_width, image_heihgt) =
-        contour_line::get_contour_line_tree_from(&config.file_path);
+    let (contour_lines, image_width, image_height) =
+        contour_line::get_contour_line_tree_from(&args.input_path, args.gap);
     println!("Contour lines count = {}", contour_lines.size());
     println!("Contour line tree created in {:?}", start.elapsed());
 
     let start = Instant::now();
     println!("Filling heightmap...");
-    let heightmap = match config.fill_mode {
+    let heightmap = match args.fill_mode {
         FillMode::Flat => {
             println!("Using flat fill.");
-            HeightMap::new_flat(contour_lines, image_width as usize, image_heihgt as usize)
+            HeightMap::new_flat(
+                contour_lines,
+                args.gap,
+                image_width as usize,
+                image_height as usize,
+            )
         }
         FillMode::Linear => {
             println!("Using linear fill");
-            HeightMap::new_linear(contour_lines, image_width as usize, image_heihgt as usize)
+            HeightMap::new_linear(
+                contour_lines,
+                args.gap,
+                image_width as usize,
+                image_height as usize,
+            )
         }
     };
     println!("Heightmap filled in {:?}", start.elapsed());
 
-    let heightmap_image = match config.color_mode {
-        ColorMode::Gray => DynamicImage::from(heightmap.to_gray_image()),
-        ColorMode::RGB => DynamicImage::from(heightmap.to_rgb_image()),
+    let mut heightmap_image = match args.color_mode {
+        ColorMode::Gray if !args.draw_contours => DynamicImage::from(heightmap.to_gray_image()),
+        _ => DynamicImage::from(heightmap.to_rgb_image()),
     };
 
-    if let Some(output_path) = config.output_file_path {
-        heightmap_image
-            .save(&output_path)
-            .expect("Failed to save file.");
-        println!("File saved to {:?}", &output_path);
+    if args.draw_contours {
+        println!("Drawing contour lines...");
+        let font = load_sans();
+        draw::draw_contour_lines_with_text(
+            heightmap_image
+                .as_mut_rgb8()
+                .expect("Failed to get RGB image."),
+            &heightmap.contour_line_tree,
+            &font,
+        );
+        println!("Contour lines drawn.");
     }
 
-    let mut canvas = heightmap_image.into_rgb8();
-
-    let font = load_sans();
-    draw::draw_contour_lines_with_text(&mut canvas, &heightmap.contour_line_tree, &font);
-    display_image("Height Map", &canvas, image_width, image_heihgt);
+    println!("Saving file...");
+    heightmap_image
+        .save(&args.output_path)
+        .expect("Failed to save file.");
+    println!("File saved to {:?}", &args.output_path);
 }
