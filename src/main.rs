@@ -3,7 +3,7 @@ mod draw;
 mod font;
 mod heightmap;
 
-use std::{env, path::PathBuf, process};
+use std::{env, path::PathBuf, process, time::Instant};
 
 use font::load_sans;
 use heightmap::HeightMap;
@@ -30,11 +30,15 @@ fn main() {
     // Read command line arguments
     let config = get_config();
 
+    let start = Instant::now();
     println!("Creating contour line tree...");
     let (contour_lines, image_width, image_heihgt) =
         contour_line::get_contour_line_tree_from(&config.file_path);
     println!("Contour lines count = {}", contour_lines.size());
+    println!("Contour line tree created in {:?}", start.elapsed());
 
+    let start = Instant::now();
+    println!("Filling heightmap...");
     let heightmap = match config.fill_mode {
         FillMode::Flat => {
             println!("Using flat fill.");
@@ -45,6 +49,7 @@ fn main() {
             HeightMap::new_linear(contour_lines, image_width as usize, image_heihgt as usize)
         }
     };
+    println!("Heightmap filled in {:?}", start.elapsed());
 
     let heightmap_image = match config.color_mode {
         ColorMode::Gray => DynamicImage::from(heightmap.to_gray_image()),
