@@ -275,13 +275,8 @@ impl HeightMap {
             }
         }
 
-        // Put these buffer outside the loop to avoid reallocating them every iteration
-        // Be careful with these. If data are not overwrite correcctly, it may lead to incorrect results
-        // Build feature and ignore maps for this height level
-
         // TODO: See if these can be reduced. It really takes a lot memory
         let mut should_process = vec![vec![false; w]; h];
-        let mut is_feature = vec![vec![false; w]; h];
 
         // Loop through each height level.
         let mut current_height = GAP;
@@ -291,9 +286,8 @@ impl HeightMap {
             // Parallelize the preprocessing step
             should_process
                 .par_iter_mut()
-                .zip(is_feature.par_iter_mut())
                 .enumerate()
-                .for_each(|(y, (process_row, feature_row))| {
+                .for_each(|(y, process_row)| {
                     for x in 0..w {
                         let interval = interval_map[y][x].as_ref().unwrap();
 
@@ -309,11 +303,6 @@ impl HeightMap {
                         };
 
                         process_row[x] = process_pixel;
-
-                        // Check if this pixel is a feature point
-                        let is_feature_point = process_pixel && point_set.contains(&(x, y));
-
-                        feature_row[x] = is_feature_point;
                     }
                 });
 
@@ -330,16 +319,20 @@ impl HeightMap {
                 let mut y_result_buffer = vec![f32::NAN; h];
 
                 let f = |y: usize| {
-                    if is_feature[y][x] { 0.0 } else { f32::INFINITY }
+                    if point_set.contains(&(x, y)) {
+                        0.0
+                    } else {
+                        f32::INFINITY
+                    }
                 };
 
-                let ignore = |y: usize| !should_process[y][x];
+                let should_process = |y: usize| should_process[y][x];
 
-                distance_transform_1d(&f, &mut y_envelope, &mut y_result_buffer, &ignore);
+                distance_transform_1d(&f, &mut y_envelope, &mut y_result_buffer, &should_process);
 
                 unsafe {
                     for y in 0..h {
-                        if !ignore(y) {
+                        if should_process(y) {
                             let offset = (y * w + x) as isize;
                             let p = ptr.0.offset(offset);
                             *p = y_result_buffer[y];
@@ -354,12 +347,12 @@ impl HeightMap {
                 let mut x_result_buffer = vec![f32::NAN; w];
 
                 let f = |x: usize| value[x];
-                let ignore = |x: usize| !should_process[y][x];
+                let should_process = |x: usize| should_process[y][x];
 
-                distance_transform_1d(&f, &mut x_envelope, &mut x_result_buffer, &ignore);
+                distance_transform_1d(&f, &mut x_envelope, &mut x_result_buffer, &should_process);
 
                 for x in 0..w {
-                    if !ignore(x) {
+                    if should_process(x) {
                         value[x] = x_result_buffer[x];
                     }
                 }
@@ -493,7 +486,7 @@ fn distance_transform_1d(
     f: &impl Fn(usize) -> f32,
     envelope: &mut Envelope,
     result: &mut [f32],
-    ignore: &impl Fn(usize) -> bool,
+    should_process: &impl Fn(usize) -> bool,
 ) {
     let n = result.len();
 
@@ -510,7 +503,7 @@ fn distance_transform_1d(
     z[1] = f32::INFINITY;
 
     for q in 1..n {
-        if ignore(q) {
+        if !should_process(q) {
             continue;
         }
 
@@ -539,7 +532,7 @@ fn distance_transform_1d(
 
     k = 0;
     for q in 0..n {
-        if ignore(q) {
+        if !should_process(q) {
             continue;
         }
 
