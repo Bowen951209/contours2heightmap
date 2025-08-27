@@ -55,7 +55,7 @@ pub fn run() {
 
     let start = Instant::now();
     println!("Creating contour line tree...");
-    let (contour_lines, image_width, image_heihgt) =
+    let (contour_lines, image_width, image_height) =
         contour_line::get_contour_line_tree_from(&args.input_path, args.gap);
     println!("Contour lines count = {}", contour_lines.size());
     println!("Contour line tree created in {:?}", start.elapsed());
@@ -69,7 +69,7 @@ pub fn run() {
                 contour_lines,
                 args.gap,
                 image_width as usize,
-                image_heihgt as usize,
+                image_height as usize,
             )
         }
         FillMode::Linear => {
@@ -78,7 +78,7 @@ pub fn run() {
                 contour_lines,
                 args.gap,
                 image_width as usize,
-                image_heihgt as usize,
+                image_height as usize,
             )
         }
     };
