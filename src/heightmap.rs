@@ -475,7 +475,10 @@ fn linear_at(
         .sqrt();
 
     let total_distance = distance_to_outer + distance_to_inner;
+
     if total_distance == 0.0 {
+        // the pixel is on the contour
+        // return either outer_height or inner_height, they are the same.
         return outer_height;
     }
 
