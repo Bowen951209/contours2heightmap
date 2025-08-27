@@ -41,6 +41,10 @@ pub struct Args {
     /// Output file path (optional)
     #[arg(short, long)]
     output: Option<PathBuf>,
+
+    /// Draw contour lines and mark height text on the heightmap
+    #[arg(short, long, action = clap::ArgAction::Set, default_value_t = true)]
+    draw_contours: bool,
 }
 
 pub fn run() {
@@ -67,21 +71,37 @@ pub fn run() {
     };
     println!("Heightmap filled in {:?}", start.elapsed());
 
-    let heightmap_image = match args.color_mode {
-        ColorMode::Gray => DynamicImage::from(heightmap.to_gray_image()),
-        ColorMode::Rgb => DynamicImage::from(heightmap.to_rgb_image()),
+    let mut heightmap_image = match args.color_mode {
+        ColorMode::Gray if !args.draw_contours => DynamicImage::from(heightmap.to_gray_image()),
+        _ => DynamicImage::from(heightmap.to_rgb_image()),
     };
 
+    if args.draw_contours {
+        println!("Drawing contour lines...");
+        let font = load_sans();
+        draw::draw_contour_lines_with_text(
+            heightmap_image
+                .as_mut_rgb8()
+                .expect("Failed to get RGB image."),
+            &heightmap.contour_line_tree,
+            &font,
+        );
+        println!("Contour lines drawn.");
+    }
+
     if let Some(output_path) = args.output {
+        println!("Saving file...");
         heightmap_image
             .save(&output_path)
             .expect("Failed to save file.");
         println!("File saved to {:?}", &output_path);
     }
 
-    let mut canvas = heightmap_image.into_rgb8();
-
-    let font = load_sans();
-    draw::draw_contour_lines_with_text(&mut canvas, &heightmap.contour_line_tree, &font);
-    display_image("Height Map", &canvas, image_width, image_heihgt);
+    println!("Displaying image...");
+    display_image(
+        "Height Map",
+        &heightmap_image.into_rgb8(),
+        image_width,
+        image_heihgt,
+    );
 }
