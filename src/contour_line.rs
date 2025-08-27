@@ -1,4 +1,4 @@
-use std::{path::Path, u32};
+use std::path::Path;
 
 use imageproc::{
     contours::{BorderType, Contour},

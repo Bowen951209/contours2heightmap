@@ -223,7 +223,7 @@ impl HeightMap {
             .progress_with(pb)
             .enumerate()
             .for_each(|(y, row)| {
-                for x in 0..w {
+                for (x, value) in row.iter_mut().enumerate() {
                     let point = Point::new(x, y);
                     let interval = interval_map[y][x].as_ref().unwrap();
                     let val = linear_at(
@@ -232,7 +232,7 @@ impl HeightMap {
                         &outer_distance_field,
                         &inner_distance_field,
                     );
-                    row[x] = Some(val as i32);
+                    *value = Some(val as i32);
                 }
             });
     }
@@ -257,7 +257,7 @@ impl HeightMap {
     /// [Distance Transforms of Sampled Functions]: https://www.cs.cornell.edu/~dph/papers/dt.pdf
     fn euclidean_distance_transform(
         &self,
-        interval_map: &Vec<Vec<Option<ContourLineInterval>>>,
+        interval_map: &[Vec<Option<ContourLineInterval>>],
         buffer: &mut Image<Luma<f32>>,
         distance_mode: DistanceMode,
         pb: &ProgressBar,
@@ -271,9 +271,7 @@ impl HeightMap {
         // Build point sets for each height level
         for cl in &self.contour_line_tree {
             let height = cl.height().unwrap();
-            let point_set = contour_point_sets
-                .entry(height)
-                .or_insert_with(HashSet::new);
+            let point_set = contour_point_sets.entry(height).or_default();
             for point in &cl.contour().points {
                 point_set.insert((point.x, point.y));
             }
@@ -295,7 +293,7 @@ impl HeightMap {
                 .par_iter_mut()
                 .enumerate()
                 .for_each(|(y, process_row)| {
-                    for x in 0..w {
+                    for (x, value) in process_row.iter_mut().enumerate() {
                         let interval = interval_map[y][x].as_ref().unwrap();
 
                         // Check if this pixel should be processed for this height level
@@ -303,13 +301,13 @@ impl HeightMap {
                             DistanceMode::ToInner => interval
                                 .inners()
                                 .first()
-                                .map_or(false, |inner| inner.height().unwrap() == current_height),
+                                .is_some_and(|inner| inner.height().unwrap() == current_height),
                             DistanceMode::ToOuter => interval
                                 .outer()
-                                .map_or(false, |outer| outer.height().unwrap() == current_height),
+                                .is_some_and(|outer| outer.height().unwrap() == current_height),
                         };
 
-                        process_row[x] = process_pixel;
+                        *value = process_pixel;
                     }
                 });
 
@@ -338,11 +336,11 @@ impl HeightMap {
                 distance_transform_1d(&f, &mut y_envelope, &mut y_result_buffer, &should_process);
 
                 unsafe {
-                    for y in 0..h {
+                    for (y, y_result) in y_result_buffer.into_iter().enumerate() {
                         if should_process(y) {
                             let offset = (y * w + x) as isize;
                             let p = ptr.0.offset(offset);
-                            *p = y_result_buffer[y];
+                            *p = y_result;
                         }
                     }
                 }
@@ -380,7 +378,7 @@ impl HeightMap {
     fn draw_contour_lines(&mut self) {
         for cl in &self.contour_line_tree {
             for p in &cl.contour().points {
-                self.data[p.y as usize][p.x as usize] = Some(cl.height().unwrap());
+                self.data[p.y][p.x] = Some(cl.height().unwrap());
             }
         }
     }
@@ -487,7 +485,7 @@ fn linear_at(
     }
 
     let t = distance_to_outer / total_distance;
-    return lerp(outer_height, inner_height, t as f32) as i32;
+    lerp(outer_height, inner_height, t) as i32
 }
 
 fn lerp(a: i32, b: i32, t: f32) -> f32 {
@@ -544,7 +542,7 @@ fn distance_transform_1d(
     }
 
     k = 0;
-    for q in 0..n {
+    for (q, result) in result.iter_mut().enumerate() {
         if !should_process(q) {
             continue;
         }
@@ -553,7 +551,7 @@ fn distance_transform_1d(
             k += 1;
         }
         let dist = q as f32 - v[k] as f32;
-        result[q] = dist * dist + f(v[k]) as f32;
+        *result = dist * dist + f(v[k]);
     }
 }
 
