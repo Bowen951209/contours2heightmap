@@ -275,7 +275,10 @@ impl HeightMap {
             }
         }
 
-        // TODO: See if these can be reduced. It really takes a lot memory
+        // A map indicating whether a pixel should be processed for the current height level.
+        // This is necessary for better performance because it will be queried twice during
+        // column and row processing. And this should be outside the height loop because we
+        // want to avoid reallocating the vector on each iteration.
         let mut should_process = vec![vec![false; w]; h];
 
         // Loop through each height level.
