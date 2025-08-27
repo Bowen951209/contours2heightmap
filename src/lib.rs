@@ -42,7 +42,7 @@ pub struct Args {
     color_mode: ColorMode,
 
     /// Draw contour lines and mark height text on the heightmap
-    #[arg(short, long, action = clap::ArgAction::Set, default_value_t = false)]
+    #[arg(long, action = clap::ArgAction::SetTrue, default_value_t = false)]
     draw_contours: bool,
 
     /// The height gap between contour lines
