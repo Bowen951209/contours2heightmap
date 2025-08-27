@@ -1,73 +1,10 @@
-mod contour_line;
-mod draw;
-mod font;
-mod heightmap;
+use std::{env, path::PathBuf, process};
 
-use std::{env, path::PathBuf, process, time::Instant};
-
-use font::load_sans;
-use heightmap::HeightMap;
-use imageproc::{image::DynamicImage, window::display_image};
-
-enum FillMode {
-    Flat,
-    Linear,
-}
-
-enum ColorMode {
-    Gray,
-    RGB,
-}
-
-struct Config {
-    file_path: String,
-    fill_mode: FillMode,
-    color_mode: ColorMode,
-    output_file_path: Option<PathBuf>,
-}
+use contours2heightmap::{ColorMode, Config, FillMode, process_contours};
 
 fn main() {
-    // Read command line arguments
     let config = get_config();
-
-    let start = Instant::now();
-    println!("Creating contour line tree...");
-    let (contour_lines, image_width, image_heihgt) =
-        contour_line::get_contour_line_tree_from(&config.file_path);
-    println!("Contour lines count = {}", contour_lines.size());
-    println!("Contour line tree created in {:?}", start.elapsed());
-
-    let start = Instant::now();
-    println!("Filling heightmap...");
-    let heightmap = match config.fill_mode {
-        FillMode::Flat => {
-            println!("Using flat fill.");
-            HeightMap::new_flat(contour_lines, image_width as usize, image_heihgt as usize)
-        }
-        FillMode::Linear => {
-            println!("Using linear fill");
-            HeightMap::new_linear(contour_lines, image_width as usize, image_heihgt as usize)
-        }
-    };
-    println!("Heightmap filled in {:?}", start.elapsed());
-
-    let heightmap_image = match config.color_mode {
-        ColorMode::Gray => DynamicImage::from(heightmap.to_gray_image()),
-        ColorMode::RGB => DynamicImage::from(heightmap.to_rgb_image()),
-    };
-
-    if let Some(output_path) = config.output_file_path {
-        heightmap_image
-            .save(&output_path)
-            .expect("Failed to save file.");
-        println!("File saved to {:?}", &output_path);
-    }
-
-    let mut canvas = heightmap_image.into_rgb8();
-
-    let font = load_sans();
-    draw::draw_contour_lines_with_text(&mut canvas, &heightmap.contour_line_tree, &font);
-    display_image("Height Map", &canvas, image_width, image_heihgt);
+    process_contours(config);
 }
 
 fn get_config() -> Config {
@@ -111,10 +48,5 @@ fn get_config() -> Config {
 
     let output_file_path: Option<PathBuf> = env::var("OUTPUT_PATH").ok().map(PathBuf::from);
 
-    Config {
-        file_path: args[1].clone(),
-        fill_mode,
-        color_mode,
-        output_file_path,
-    }
+    Config::new(args[1].clone(), fill_mode, color_mode, output_file_path)
 }
