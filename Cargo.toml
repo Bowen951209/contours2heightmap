@@ -10,7 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.0", features = ["derive"] }
-imageproc = { version = "0.25.0", features = ["display-window"] }
+imageproc = "0.25.0"
 ab_glyph = "0.2.29"
 indicatif = {version = "0.18.0", features = ["rayon"]}
 rayon = "1.10.0"

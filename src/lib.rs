@@ -8,7 +8,7 @@ use std::{path::PathBuf, time::Instant};
 use clap::{Parser, ValueEnum, command};
 use font::load_sans;
 use heightmap::HeightMap;
-use imageproc::{image::DynamicImage, window::display_image};
+use imageproc::image::DynamicImage;
 
 #[derive(Debug, Clone, ValueEnum)]
 pub enum FillMode {
@@ -28,7 +28,10 @@ pub enum ColorMode {
 #[command(version)]
 pub struct Args {
     /// Input contour image file
-    file_path: PathBuf,
+    input_path: PathBuf,
+
+    /// Output image file
+    output_path: PathBuf,
 
     /// Fill mode for heightmap generation
     #[arg(short, long, value_enum, default_value_t = FillMode::Flat)]
@@ -37,10 +40,6 @@ pub struct Args {
     /// Color mode for output
     #[arg(short, long, value_enum, default_value_t = ColorMode::Gray)]
     color_mode: ColorMode,
-
-    /// Output file path (optional)
-    #[arg(short, long)]
-    output: Option<PathBuf>,
 
     /// Draw contour lines and mark height text on the heightmap
     #[arg(short, long, action = clap::ArgAction::Set, default_value_t = true)]
@@ -53,7 +52,7 @@ pub fn run() {
     let start = Instant::now();
     println!("Creating contour line tree...");
     let (contour_lines, image_width, image_heihgt) =
-        contour_line::get_contour_line_tree_from(&args.file_path);
+        contour_line::get_contour_line_tree_from(&args.input_path);
     println!("Contour lines count = {}", contour_lines.size());
     println!("Contour line tree created in {:?}", start.elapsed());
 
@@ -89,19 +88,11 @@ pub fn run() {
         println!("Contour lines drawn.");
     }
 
-    if let Some(output_path) = args.output {
-        println!("Saving file...");
-        heightmap_image
-            .save(&output_path)
-            .expect("Failed to save file.");
-        println!("File saved to {:?}", &output_path);
-    }
+    println!("Saving file...");
+    heightmap_image
+        .save(&args.output_path)
+        .expect("Failed to save file.");
+    println!("File saved to {:?}", &args.output_path);
 
     println!("Displaying image...");
-    display_image(
-        "Height Map",
-        &heightmap_image.into_rgb8(),
-        image_width,
-        image_heihgt,
-    );
 }
