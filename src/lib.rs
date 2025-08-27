@@ -42,7 +42,7 @@ pub struct Args {
     color_mode: ColorMode,
 
     /// Draw contour lines and mark height text on the heightmap
-    #[arg(short, long, action = clap::ArgAction::Set, default_value_t = true)]
+    #[arg(short, long, action = clap::ArgAction::Set, default_value_t = false)]
     draw_contours: bool,
 
     /// The height gap between contour lines
@@ -85,17 +85,20 @@ pub fn run() {
     println!("Heightmap filled in {:?}", start.elapsed());
 
     let mut heightmap_image = match args.color_mode {
-        ColorMode::Gray if !args.draw_contours => DynamicImage::from(heightmap.to_gray_image()),
-        _ => DynamicImage::from(heightmap.to_rgb_image()),
+        ColorMode::Gray => DynamicImage::from(heightmap.to_gray_image()),
+        ColorMode::Rgb => DynamicImage::from(heightmap.to_rgb_image()),
     };
 
     if args.draw_contours {
         println!("Drawing contour lines...");
+
+        // Ensure the image is in RGB format before drawing colored contour lines.
+        // If the image is already RGB, this has no effect; if grayscale, it converts to RGB.
+        heightmap_image = DynamicImage::from(heightmap_image.into_rgb8());
+
         let font = load_sans();
         draw::draw_contour_lines_with_text(
-            heightmap_image
-                .as_mut_rgb8()
-                .expect("Failed to get RGB image."),
+            heightmap_image.as_mut_rgb8().unwrap(),
             &heightmap.contour_line_tree,
             &font,
         );
