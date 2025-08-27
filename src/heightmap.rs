@@ -12,6 +12,7 @@ use rstar::RTree;
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet, VecDeque},
+    sync::Arc,
     vec,
 };
 
@@ -316,38 +317,36 @@ impl HeightMap {
                     }
                 });
 
-            // Process columns (Y-direction) in parallel
-            // We collect results to avoid concurrent writes to the buffer
+            // Process columns (Y-direction) in parallel.
+            // Using unsafe here because, although we can parallelize rows,
+            // we cannot parallelize columns directly with imageproc/rayon.
+            // A raw pointer approach is used to handle this.
+            // Although column data are not contiguous like rows (which may cause cache misses),
+            // this approach is still faster than processing each column sequentially
+            // or processing them safely and then collecting and writing them back.
+            let ptr = Arc::new(PixelPtr(buffer.as_mut_ptr()));
+            (0..w).into_par_iter().for_each(|x| {
+                let mut y_envelope = Envelope::new(h);
+                let mut y_result_buffer = vec![f32::NAN; h];
 
-            // TODO: "Check if imageproc support concurrent writes"
-            let column_results: Vec<_> = (0..w)
-                .into_par_iter()
-                .map(|x| {
-                    // Note: These are now created inside parallel closures for thread safety
-                    let mut y_envelope = Envelope::new(h);
-                    let mut y_result_buffer = vec![f32::NAN; h];
+                let f = |y: usize| {
+                    if is_feature[y][x] { 0.0 } else { f32::INFINITY }
+                };
 
-                    let f = |y: usize| {
-                        if is_feature[y][x] { 0.0 } else { f32::INFINITY }
-                    };
+                let ignore = |y: usize| !should_process[y][x];
 
-                    let ignore = |y: usize| !should_process[y][x];
+                distance_transform_1d(&f, &mut y_envelope, &mut y_result_buffer, &ignore);
 
-                    distance_transform_1d(&f, &mut y_envelope, &mut y_result_buffer, &ignore);
-
-                    // Return the column index and results
-                    (x, y_result_buffer)
-                })
-                .collect();
-
-            // Apply column results to buffer
-            for (x, y_result_buffer) in column_results {
-                for y in 0..h {
-                    if should_process[y][x] {
-                        buffer.put_pixel(x as u32, y as u32, Luma([y_result_buffer[y]]));
+                unsafe {
+                    for y in 0..h {
+                        if !ignore(y) {
+                            let offset = (y * w + x) as isize;
+                            let p = ptr.0.offset(offset);
+                            *p = y_result_buffer[y];
+                        }
                     }
                 }
-            }
+            });
 
             // Process rows (X-direction) in parallel
             buffer.par_chunks_mut(w).enumerate().for_each(|(y, value)| {
@@ -400,6 +399,10 @@ impl HeightMap {
         Rgb([r, g, b])
     }
 }
+
+struct PixelPtr(*mut f32);
+unsafe impl Send for PixelPtr {}
+unsafe impl Sync for PixelPtr {}
 
 /// The parabola lower-envelope structure describe in
 /// [Distance Transforms of Sampled Functions](https://www.cs.cornell.edu/~dph/papers/dt.pdf)
