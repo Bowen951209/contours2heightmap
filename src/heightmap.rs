@@ -418,7 +418,6 @@ impl Envelope {
     }
 }
 
-// TODO: Fix flood fill performance.
 fn flood_fill<T: Clone>(data: &mut [Vec<Option<T>>], x: usize, y: usize, replacement_value: T) {
     let w = data[0].len();
     let h = data.len();

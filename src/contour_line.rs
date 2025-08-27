@@ -31,23 +31,26 @@ impl ContourLine {
         }
     }
 
+    // Ray Casting Algorithm
     pub fn is_point_inside(&self, point: &Point<usize>) -> bool {
-        let mut hit_count = 0;
-        let mut previous_point: Option<&Point<usize>> = None;
-        for x in point.x..=self.bbox.upper()[0] as usize {
-            for i in 0..self.contour.points.len() {
-                let current_point = &self.contour.points[i];
-                if current_point.x == x && current_point.y == point.y && !self.is_extremum(i) {
-                    if previous_point.is_none() || current_point.x != previous_point.unwrap().x + 1
-                    {
-                        hit_count += 1;
-                    }
-                    previous_point = Some(current_point);
-                }
+        let (px, py) = (point.x as f64, point.y as f64);
+        let mut inside = false;
+        let points = &self.contour.points;
+        let n = points.len();
+
+        let mut j = n - 1;
+        for i in 0..n {
+            let (xi, yi) = (points[i].x as f64, points[i].y as f64);
+            let (xj, yj) = (points[j].x as f64, points[j].y as f64);
+
+            // Check if point is on a horizontal ray from the test point
+            if ((yi > py) != (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi) {
+                inside = !inside;
             }
+            j = i;
         }
 
-        hit_count % 2 == 1
+        inside
     }
 
     pub fn contour(&self) -> &Contour<usize> {
@@ -56,31 +59,6 @@ impl ContourLine {
 
     pub fn height(&self) -> Option<i32> {
         self.height
-    }
-
-    fn is_extremum(&self, point_index: usize) -> bool {
-        let points = &self.contour.points;
-        let p = points[point_index];
-        let mut right_index = point_index as i32 + 1;
-        while self.point_index_wrap(right_index).y == p.y {
-            right_index += 1;
-        }
-        let right_ordering = self.point_index_wrap(right_index).y.cmp(&p.y);
-
-        let mut left_index = point_index as i32 - 1;
-        while self.point_index_wrap(left_index).y == p.y {
-            left_index -= 1;
-        }
-        let left_ordering = self.point_index_wrap(left_index).y.cmp(&p.y);
-
-        right_ordering == left_ordering
-    }
-
-    fn point_index_wrap(&self, index: i32) -> &Point<usize> {
-        let points = &self.contour.points;
-        let len = points.len() as i32;
-        let wrapped_index = ((index % len + len) % len) as usize;
-        &points[wrapped_index]
     }
 }
 
@@ -92,6 +70,12 @@ impl RTreeObject for ContourLine {
     }
 }
 
+/// Indicates the inner and outer contour lines for a pixel.
+///
+/// For a given pixel, there may be no outer contour line (the pixel is outside all contours),
+/// or there may be no inner contour lines (the pixel is in the innermost region).
+/// Therefore, `outer` is an [`Option`], and since there may be multiple inner contour lines,
+/// `inners` is a [`Vec`]. Set it to empty if there are no inner contours.
 #[derive(Clone)]
 pub struct ContourLineInterval<'a> {
     outer: Option<&'a ContourLine>,
@@ -106,6 +90,7 @@ impl<'a> ContourLineInterval<'a> {
         }
     }
 
+    // TODO!("get rid of these and just use pub fields");
     pub fn outer(&self) -> Option<&ContourLine> {
         self.outer
     }
@@ -148,7 +133,7 @@ pub fn find_contour_line_interval(
         .copied();
 
     // Collect inner contour lines
-    let inner_contour_lines = if let Some(outer) = outer_contour_line {
+    let inner_contour_lines = outer_contour_line.map_or(vec![], |outer| {
         let target_height = outer.height().unwrap() + GAP;
         let outer_envelope = outer.envelope();
         contour_line_tree
@@ -156,9 +141,7 @@ pub fn find_contour_line_interval(
             .filter(|cl| cl.height().unwrap() == target_height)
             .filter(|cl| outer_envelope.contains_envelope(&cl.envelope()))
             .collect()
-    } else {
-        Vec::new()
-    };
+    });
 
     ContourLineInterval {
         outer: outer_contour_line,
