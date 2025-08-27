@@ -30,6 +30,7 @@ fn main() {
     // Read command line arguments
     let config = get_config();
 
+    println!("Creating contour line tree...");
     let (contour_lines, image_width, image_heihgt) =
         contour_line::get_contour_line_tree_from(&config.file_path);
     println!("Contour lines count = {}", contour_lines.size());
