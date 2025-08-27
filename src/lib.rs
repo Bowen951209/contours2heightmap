@@ -44,6 +44,10 @@ pub struct Args {
     /// Draw contour lines and mark height text on the heightmap
     #[arg(short, long, action = clap::ArgAction::Set, default_value_t = true)]
     draw_contours: bool,
+
+    /// The height gap between contour lines
+    #[arg(short, long, default_value_t = 50)]
+    gap: i32,
 }
 
 pub fn run() {
@@ -52,7 +56,7 @@ pub fn run() {
     let start = Instant::now();
     println!("Creating contour line tree...");
     let (contour_lines, image_width, image_heihgt) =
-        contour_line::get_contour_line_tree_from(&args.input_path);
+        contour_line::get_contour_line_tree_from(&args.input_path, args.gap);
     println!("Contour lines count = {}", contour_lines.size());
     println!("Contour line tree created in {:?}", start.elapsed());
 
@@ -61,11 +65,21 @@ pub fn run() {
     let heightmap = match args.fill_mode {
         FillMode::Flat => {
             println!("Using flat fill.");
-            HeightMap::new_flat(contour_lines, image_width as usize, image_heihgt as usize)
+            HeightMap::new_flat(
+                contour_lines,
+                args.gap,
+                image_width as usize,
+                image_heihgt as usize,
+            )
         }
         FillMode::Linear => {
             println!("Using linear fill");
-            HeightMap::new_linear(contour_lines, image_width as usize, image_heihgt as usize)
+            HeightMap::new_linear(
+                contour_lines,
+                args.gap,
+                image_width as usize,
+                image_heihgt as usize,
+            )
         }
     };
     println!("Heightmap filled in {:?}", start.elapsed());
@@ -93,6 +107,4 @@ pub fn run() {
         .save(&args.output_path)
         .expect("Failed to save file.");
     println!("File saved to {:?}", &args.output_path);
-
-    println!("Displaying image...");
 }

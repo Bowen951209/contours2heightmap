@@ -16,7 +16,7 @@ use std::{
     vec,
 };
 
-use crate::contour_line::{ContourLine, ContourLineInterval, GAP, find_contour_line_interval};
+use crate::contour_line::{ContourLine, ContourLineInterval, find_contour_line_interval};
 
 /// The mode of distance calculation.
 /// This is for [`HeightMap::distance_transform`]
@@ -31,20 +31,22 @@ enum DistanceMode {
 pub struct HeightMap {
     pub data: Vec<Vec<Option<i32>>>,
     pub contour_line_tree: RTree<ContourLine>,
+    /// The height gap between contour lines
+    pub gap: i32,
     max_height: i32,
 }
 
 impl HeightMap {
     /// Return a flat-filled heightmap based on the passed in `contour_lines` and the given width and height.
     /// This function will call `flat_fill` to fill the heightmap. The resulting heightmap will look like stairs or river terrace.
-    pub fn new_flat(contour_line_tree: RTree<ContourLine>, w: usize, h: usize) -> Self {
-        let mut heightmap = Self::new_with_contour_lines_drawn(contour_line_tree, w, h);
+    pub fn new_flat(contour_line_tree: RTree<ContourLine>, gap: i32, w: usize, h: usize) -> Self {
+        let mut heightmap = Self::new_with_contour_lines_drawn(contour_line_tree, gap, w, h);
         heightmap.flat_fill();
         heightmap
     }
 
-    pub fn new_linear(contour_line_tree: RTree<ContourLine>, w: usize, h: usize) -> Self {
-        let mut heightmap = Self::new_with_contour_lines_drawn(contour_line_tree, w, h);
+    pub fn new_linear(contour_line_tree: RTree<ContourLine>, gap: i32, w: usize, h: usize) -> Self {
+        let mut heightmap = Self::new_with_contour_lines_drawn(contour_line_tree, gap, w, h);
         heightmap.linear_fill();
         heightmap
     }
@@ -85,6 +87,7 @@ impl HeightMap {
     /// the points and height value to [`HeightMap::data`] for each contour line.
     fn new_with_contour_lines_drawn(
         contour_line_tree: RTree<ContourLine>,
+        gap: i32,
         w: usize,
         h: usize,
     ) -> Self {
@@ -97,6 +100,7 @@ impl HeightMap {
             data: vec![vec![None; w]; h],
             contour_line_tree,
             max_height,
+            gap,
         };
 
         heightmap.draw_contour_lines();
@@ -116,7 +120,7 @@ impl HeightMap {
                 }
 
                 let interval =
-                    find_contour_line_interval(Point::new(x, y), &self.contour_line_tree);
+                    find_contour_line_interval(Point::new(x, y), &self.contour_line_tree, self.gap);
 
                 let height = match interval.outer() {
                     Some(outside) => outside.height().unwrap(),
@@ -168,7 +172,7 @@ impl HeightMap {
                 }
 
                 let interval =
-                    find_contour_line_interval(Point::new(x, y), &self.contour_line_tree);
+                    find_contour_line_interval(Point::new(x, y), &self.contour_line_tree, self.gap);
 
                 flood_fill(&mut interval_map, x, y, interval);
                 pb.inc(1);
@@ -181,7 +185,7 @@ impl HeightMap {
 
         // Each pixel stores the squared distance to the nearest OUTER contour line
         let pb = multi_progress.add(create_progress_bar(
-            (self.max_height / GAP) as u64,
+            (self.max_height / self.gap) as u64,
             "Distance transforming to outer contour lines",
         ));
         let mut outer_distance_field = Image::new(w as u32, h as u32);
@@ -194,7 +198,7 @@ impl HeightMap {
 
         // Each pixel stores the squared distance to the nearest INNER contour line
         let pb = multi_progress.add(create_progress_bar(
-            (self.max_height / GAP) as u64,
+            (self.max_height / self.gap) as u64,
             "Distance transforming to inner contour lines",
         ));
         let mut inner_distance_field = Image::new(w as u32, h as u32);
@@ -282,7 +286,7 @@ impl HeightMap {
         let mut should_process = vec![vec![false; w]; h];
 
         // Loop through each height level.
-        let mut current_height = GAP;
+        let mut current_height = self.gap;
         while current_height <= self.max_height {
             let point_set = contour_point_sets.get(&current_height).unwrap();
 
@@ -363,7 +367,7 @@ impl HeightMap {
 
             pb.inc(1);
             pb.set_message(format!("Distance transformed at height {current_height}"));
-            current_height += GAP;
+            current_height += self.gap;
         }
 
         pb.finish_with_message(format!(
@@ -587,21 +591,25 @@ mod test {
 
     use crate::{contour_line, heightmap::HeightMap};
 
+    const GAP: i32 = 50;
+
     #[test]
     fn test_one_hill_removed_and_two_hills_have_same_linear_height_at_same_point() {
         let file_path_one_hill_removed = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("assets/one_hill_removed_from_two_hills.png");
-        let (contour_lines_one_hill_removed, w, h) =
-            contour_line::get_contour_line_tree_from(file_path_one_hill_removed.to_str().unwrap());
+        let (contour_lines_one_hill_removed, w, h) = contour_line::get_contour_line_tree_from(
+            file_path_one_hill_removed.to_str().unwrap(),
+            GAP,
+        );
         let one_hill_removed_heightmap =
-            HeightMap::new_linear(contour_lines_one_hill_removed, w as usize, h as usize);
+            HeightMap::new_linear(contour_lines_one_hill_removed, GAP, w as usize, h as usize);
 
         let file_path_two_hills =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.png");
         let (contour_lines_two_hills, w, h) =
-            contour_line::get_contour_line_tree_from(file_path_two_hills.to_str().unwrap());
+            contour_line::get_contour_line_tree_from(file_path_two_hills.to_str().unwrap(), GAP);
         let two_hills_heightmap =
-            HeightMap::new_linear(contour_lines_two_hills, w as usize, h as usize);
+            HeightMap::new_linear(contour_lines_two_hills, GAP, w as usize, h as usize);
 
         let point_y = 114;
         let point_x = 228;
@@ -616,67 +624,67 @@ mod test {
     fn test_flat_fill_layer_one_hill() {
         let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/one_hill.png");
         let (contour_lines, w, h) =
-            contour_line::get_contour_line_tree_from(file_path.to_str().unwrap());
-        let heightmap = HeightMap::new_flat(contour_lines, w as usize, h as usize);
+            contour_line::get_contour_line_tree_from(file_path.to_str().unwrap(), GAP);
+        let heightmap = HeightMap::new_flat(contour_lines, GAP, w as usize, h as usize);
 
         // x=15, y=79
         assert_eq!(heightmap.data[79][15].unwrap(), 0);
 
         // x=157, y=182
-        assert_eq!(heightmap.data[182][157].unwrap(), contour_line::GAP);
+        assert_eq!(heightmap.data[182][157].unwrap(), GAP);
 
         // x=185, y=109
-        assert_eq!(heightmap.data[109][185].unwrap(), contour_line::GAP * 2);
+        assert_eq!(heightmap.data[109][185].unwrap(), GAP * 2);
 
         // x=110, y=85
-        assert_eq!(heightmap.data[85][110].unwrap(), contour_line::GAP * 3);
+        assert_eq!(heightmap.data[85][110].unwrap(), GAP * 3);
 
         // x=128, y=89
-        assert_eq!(heightmap.data[89][128].unwrap(), contour_line::GAP * 4);
+        assert_eq!(heightmap.data[89][128].unwrap(), GAP * 4);
     }
 
     #[test]
     fn test_flat_fill_layer_two_hills() {
         let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.png");
         let (contour_lines, w, h) =
-            contour_line::get_contour_line_tree_from(file_path.to_str().unwrap());
-        let heightmap = HeightMap::new_flat(contour_lines, w as usize, h as usize);
+            contour_line::get_contour_line_tree_from(file_path.to_str().unwrap(), GAP);
+        let heightmap = HeightMap::new_flat(contour_lines, GAP, w as usize, h as usize);
 
         // x=24, y=185
         assert_eq!(heightmap.data[185][24].unwrap(), 0);
 
         // x=148, y=174
-        assert_eq!(heightmap.data[174][148].unwrap(), contour_line::GAP);
+        assert_eq!(heightmap.data[174][148].unwrap(), GAP);
 
         // x=110, y=164
-        assert_eq!(heightmap.data[164][110].unwrap(), contour_line::GAP * 2);
+        assert_eq!(heightmap.data[164][110].unwrap(), GAP * 2);
 
         // x=129, y=147
-        assert_eq!(heightmap.data[147][129].unwrap(), contour_line::GAP * 3);
+        assert_eq!(heightmap.data[147][129].unwrap(), GAP * 3);
         // x=174, y=114
-        assert_eq!(heightmap.data[114][174].unwrap(), contour_line::GAP * 3);
+        assert_eq!(heightmap.data[114][174].unwrap(), GAP * 3);
 
         // x=177, y=122
-        assert_eq!(heightmap.data[122][177].unwrap(), contour_line::GAP * 4);
+        assert_eq!(heightmap.data[122][177].unwrap(), GAP * 4);
         // x=133, y=110
-        assert_eq!(heightmap.data[110][133].unwrap(), contour_line::GAP * 4);
+        assert_eq!(heightmap.data[110][133].unwrap(), GAP * 4);
 
         // x=121, y=104
-        assert_eq!(heightmap.data[104][121].unwrap(), contour_line::GAP * 5);
+        assert_eq!(heightmap.data[104][121].unwrap(), GAP * 5);
         // x=197, y=161
-        assert_eq!(heightmap.data[161][197].unwrap(), contour_line::GAP * 5);
+        assert_eq!(heightmap.data[161][197].unwrap(), GAP * 5);
 
         // x=194, y=132
-        assert_eq!(heightmap.data[132][194].unwrap(), contour_line::GAP * 6);
+        assert_eq!(heightmap.data[132][194].unwrap(), GAP * 6);
         // x=113, y=122
-        assert_eq!(heightmap.data[122][113].unwrap(), contour_line::GAP * 6);
+        assert_eq!(heightmap.data[122][113].unwrap(), GAP * 6);
 
         // x=198, y=143
-        assert_eq!(heightmap.data[143][198].unwrap(), contour_line::GAP * 7);
+        assert_eq!(heightmap.data[143][198].unwrap(), GAP * 7);
         // x=104, y=118
-        assert_eq!(heightmap.data[118][104].unwrap(), contour_line::GAP * 7);
+        assert_eq!(heightmap.data[118][104].unwrap(), GAP * 7);
 
         // x=91, y=111
-        assert_eq!(heightmap.data[111][91].unwrap(), contour_line::GAP * 8);
+        assert_eq!(heightmap.data[111][91].unwrap(), GAP * 8);
     }
 }
