@@ -475,6 +475,10 @@ fn linear_at(
         .sqrt();
 
     let total_distance = distance_to_outer + distance_to_inner;
+    if total_distance == 0.0 {
+        return outer_height;
+    }
+
     let t = distance_to_outer / total_distance;
     return lerp(outer_height, inner_height, t as f32) as i32;
 }
