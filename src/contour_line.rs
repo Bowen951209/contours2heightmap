@@ -1,4 +1,4 @@
-use std::u32;
+use std::{path::Path, u32};
 
 use imageproc::{
     contours::{BorderType, Contour},
@@ -100,7 +100,7 @@ impl<'a> ContourLineInterval<'a> {
     }
 }
 
-pub fn get_contour_line_tree_from(file_path: &str) -> (RTree<ContourLine>, u32, u32) {
+pub fn get_contour_line_tree_from(file_path: impl AsRef<Path>) -> (RTree<ContourLine>, u32, u32) {
     // Load the image
     let dyn_img = image::open(file_path).expect("Failed to open image file");
     let (w, h) = (dyn_img.width(), dyn_img.height());

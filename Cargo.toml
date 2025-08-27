@@ -2,8 +2,14 @@
 name = "contours2heightmap"
 version = "0.0.1"
 edition = "2024"
+default-run = "c2h"
+
+[[bin]]
+name = "c2h"
+path = "src/main.rs"
 
 [dependencies]
+clap = { version = "4.0", features = ["derive"] }
 imageproc = { version = "0.25.0", features = ["display-window"] }
 ab_glyph = "0.2.29"
 indicatif = {version = "0.18.0", features = ["rayon"]}
