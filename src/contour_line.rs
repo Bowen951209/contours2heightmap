@@ -127,10 +127,9 @@ pub fn find_contour_line_interval(
 
     // Identify the outer contour line
     let outer_contour_line = sorted_contour_lines
-        .iter()
+        .into_iter()
         .rev()
-        .find(|cl| cl.is_point_inside(&point))
-        .copied();
+        .find(|cl| cl.is_point_inside(&point));
 
     // Collect inner contour lines
     let inner_contour_lines = outer_contour_line.map_or(vec![], |outer| {
