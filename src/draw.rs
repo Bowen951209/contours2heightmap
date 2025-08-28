@@ -13,7 +13,7 @@ pub fn draw_contour_lines_with_text(
 ) {
     for contour_line in contour_lines {
         // Draw all contour line points
-        let points = &contour_line.contour().points;
+        let points = &contour_line.contour.points;
         for point in points {
             image.draw_pixel(point.x as u32, point.y as u32, Rgb::from([255, 0, 0]));
         }
@@ -21,10 +21,7 @@ pub fn draw_contour_lines_with_text(
         // Mark the first point of the contour line with height value
         let point0 = points[0];
         let scale = PxScale::from(24.0);
-        let text = contour_line
-            .height()
-            .expect("Contour line does not have height")
-            .to_string();
+        let text = contour_line.height.to_string();
 
         draw_text_on_center(
             image,
