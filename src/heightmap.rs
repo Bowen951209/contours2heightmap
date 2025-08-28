@@ -61,7 +61,7 @@ impl HeightMap {
             for x in 0..w {
                 let val = self.data.get_pixel(x, y).0[0];
                 let gray = (val / self.max_height * 255.0) as u8;
-                image.draw_pixel(x as u32, y as u32, Luma([gray]));
+                image.draw_pixel(x, y, Luma([gray]));
             }
         }
 
@@ -181,7 +181,7 @@ impl HeightMap {
             (self.max_height / self.gap) as u64,
             "Distance transforming to outer contour lines",
         ));
-        let mut outer_distance_field = Image::new(w as u32, h as u32);
+        let mut outer_distance_field = Image::new(w, h);
         self.euclidean_distance_transform(
             &interval_map,
             &mut outer_distance_field,
@@ -194,7 +194,7 @@ impl HeightMap {
             (self.max_height / self.gap) as u64,
             "Distance transforming to inner contour lines",
         ));
-        let mut inner_distance_field = Image::new(w as u32, h as u32);
+        let mut inner_distance_field = Image::new(w, h);
         self.euclidean_distance_transform(
             &interval_map,
             &mut inner_distance_field,
@@ -353,7 +353,7 @@ impl HeightMap {
                     // that copies row_values for use in f, but that would require additional memory allocation.
                     let ptr = row_values.as_mut_ptr();
 
-                    let f = |x: usize| *ptr.offset(x as isize);
+                    let f = |x: usize| *ptr.add(x);
                     let should_process = |x: usize| should_process[y][x];
 
                     distance_transform_1d(&f, &mut x_envelope, row_values, &should_process);
@@ -453,13 +453,13 @@ fn linear_at(
 
     let outer_height = outer.height;
     let distance_to_outer = outer_distance_field
-        .get_pixel(point.x as u32, point.y as u32)
+        .get_pixel(point.x, point.y)
         .0[0]
         .sqrt();
 
     let inner_height = inners[0].height;
     let distance_to_inner = inner_distance_field
-        .get_pixel(point.x as u32, point.y as u32)
+        .get_pixel(point.x, point.y)
         .0[0]
         .sqrt();
 

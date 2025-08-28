@@ -15,7 +15,7 @@ pub fn draw_contour_lines_with_text(
         // Draw all contour line points
         let points = &contour_line.contour.points;
         for point in points {
-            image.draw_pixel(point.x as u32, point.y as u32, Rgb::from([255, 0, 0]));
+            image.draw_pixel(point.x, point.y, Rgb::from([255, 0, 0]));
         }
 
         // Mark the first point of the contour line with height value
