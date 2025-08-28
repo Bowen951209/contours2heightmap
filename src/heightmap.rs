@@ -347,21 +347,22 @@ impl HeightMap {
             });
 
             // Process rows (X-direction) in parallel
-            buffer.par_chunks_mut(w).enumerate().for_each(|(y, value)| {
-                let mut x_envelope = Envelope::new(w);
-                let mut x_result_buffer = vec![f32::NAN; w];
+            buffer
+                .par_chunks_mut(w)
+                .enumerate()
+                .for_each(|(y, row_values)| unsafe {
+                    let mut x_envelope = Envelope::new(w);
 
-                let f = |x: usize| value[x];
-                let should_process = |x: usize| should_process[y][x];
+                    // Get a raw pointer to row_values. This is unsafe code.
+                    // You could achieve the same result safely by creating a buffer vector
+                    // that copies row_values for use in f, but that would require additional memory allocation.
+                    let ptr = row_values.as_mut_ptr();
 
-                distance_transform_1d(&f, &mut x_envelope, &mut x_result_buffer, &should_process);
+                    let f = |x: usize| *ptr.offset(x as isize);
+                    let should_process = |x: usize| should_process[y][x];
 
-                for x in 0..w {
-                    if should_process(x) {
-                        value[x] = x_result_buffer[x];
-                    }
-                }
-            });
+                    distance_transform_1d(&f, &mut x_envelope, row_values, &should_process);
+                });
 
             pb.inc(1);
             pb.set_message(format!("Distance transformed at height {current_height}"));
@@ -550,6 +551,7 @@ fn distance_transform_1d(
         while z[k + 1] < q as f32 {
             k += 1;
         }
+
         let dist = q as f32 - v[k] as f32;
         *result = dist * dist + f(v[k]);
     }
