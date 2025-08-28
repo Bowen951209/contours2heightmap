@@ -101,7 +101,7 @@ impl HeightMap {
 
                 let interval = find_contour_line_interval(x, y, &self.contour_line_tree, self.gap);
 
-                let height = match interval.outer() {
+                let height = match interval.outer {
                     Some(outside) => outside.height,
                     None => 0.0,
                 };
@@ -294,11 +294,11 @@ impl HeightMap {
                         // Check if this pixel should be processed for this height level
                         let process_pixel = match distance_mode {
                             DistanceMode::ToInner => interval
-                                .inners()
+                                .inners
                                 .first()
                                 .is_some_and(|inner| inner.height == current_height),
                             DistanceMode::ToOuter => interval
-                                .outer()
+                                .outer
                                 .is_some_and(|outer| outer.height == current_height),
                         };
 
@@ -443,7 +443,7 @@ fn linear_at(
     outer_distance_field: &Image<Luma<f64>>,
     inner_distance_field: &Image<Luma<f64>>,
 ) -> f64 {
-    let (Some(outer), inners) = (interval.outer(), interval.inners()) else {
+    let (Some(outer), inners) = (interval.outer, &interval.inners) else {
         return 0.0;
     };
 

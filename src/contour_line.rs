@@ -69,8 +69,8 @@ impl RTreeObject for ContourLine {
 /// `inners` is a [`Vec`]. Set it to empty if there are no inner contours.
 #[derive(Clone)]
 pub struct ContourLineInterval<'a> {
-    outer: Option<&'a ContourLine>,
-    inners: Vec<&'a ContourLine>,
+    pub outer: Option<&'a ContourLine>,
+    pub inners: Vec<&'a ContourLine>,
 }
 
 impl<'a> ContourLineInterval<'a> {
@@ -79,15 +79,6 @@ impl<'a> ContourLineInterval<'a> {
             outer: Some(outer),
             inners: vec![inner],
         }
-    }
-
-    // TODO!("get rid of these and just use pub fields");
-    pub fn outer(&self) -> Option<&ContourLine> {
-        self.outer
-    }
-
-    pub fn inners(&self) -> &Vec<&ContourLine> {
-        &self.inners
     }
 }
 
@@ -248,7 +239,7 @@ mod tests {
         let (tree, _, _) = get_contour_line_tree_from(file_path.to_str().unwrap(), GAP);
 
         let interval = find_contour_line_interval(232, 117, &tree, GAP);
-        let inners = interval.inners();
+        let inners = interval.inners;
         assert_eq!(inners.len(), 2);
     }
 
