@@ -46,8 +46,8 @@ pub struct Args {
     draw_contours: bool,
 
     /// The height gap between contour lines
-    #[arg(short, long, default_value_t = 50)]
-    gap: i32,
+    #[arg(short, long, default_value_t = 50.0)]
+    gap: f64,
 }
 
 pub fn run() {
@@ -65,21 +65,11 @@ pub fn run() {
     let heightmap = match args.fill_mode {
         FillMode::Flat => {
             println!("Using flat fill.");
-            HeightMap::new_flat(
-                contour_lines,
-                args.gap,
-                image_width as usize,
-                image_height as usize,
-            )
+            HeightMap::new_flat(contour_lines, args.gap, image_width, image_height)
         }
         FillMode::Linear => {
             println!("Using linear fill");
-            HeightMap::new_linear(
-                contour_lines,
-                args.gap,
-                image_width as usize,
-                image_height as usize,
-            )
+            HeightMap::new_linear(contour_lines, args.gap, image_width, image_height)
         }
     };
     println!("Heightmap filled in {:?}", start.elapsed());
