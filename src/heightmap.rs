@@ -1,7 +1,8 @@
+use colorous::Gradient;
 use imageproc::{
     definitions::Image,
     drawing::Canvas,
-    image::{GrayImage, Luma, RgbImage},
+    image::{Luma, Rgb, RgbImage},
     point::Point,
 };
 use indicatif::{
@@ -53,23 +54,36 @@ impl HeightMap {
         heightmap
     }
 
-    pub fn to_gray_image(&self) -> GrayImage {
-        // TODO: Try native f32 format for PNG32
-        let (w, h) = self.data.dimensions();
-        let mut image = GrayImage::new(w, h);
-        for y in 0..h {
-            for x in 0..w {
-                let val = self.data.get_pixel(x, y).0[0];
-                let gray = (val / self.max_height * 255.0) as u8;
-                image.draw_pixel(x, y, Luma([gray]));
-            }
-        }
+    /// Create a [`Image<Luma<u16>>`] from the heightmap data.
+    /// For each pixel, map from \[0.0, `self.max_height`\] to [0, [`u16::MAX`]]
+    pub fn to_gray16(&self) -> Image<Luma<u16>> {
+        let mut image = Image::new(self.data.width(), self.data.height());
+
+        image
+            .par_iter_mut()
+            .zip(self.data.par_iter())
+            .for_each(|(out_pixel, &in_pixel)| {
+                let scaled_value = (in_pixel / self.max_height * u16::MAX as f64) as u16;
+                *out_pixel = scaled_value;
+            });
 
         image
     }
 
-    pub fn to_rgb_image(&self) -> RgbImage {
-        todo!()
+    /// Create a [`RgbImage`] from the heightmap data using the given `gradient`.
+    /// The `t` factor for the gradient is calculated as `height / self.max_height`.
+    pub fn to_rgb_8(&self, gradient: Gradient) -> RgbImage {
+        let mut image = Image::new(self.data.width(), self.data.height());
+
+        image
+            .par_pixels_mut()
+            .zip(self.data.par_iter())
+            .for_each(|(out_pixel, &in_pixel)| {
+                let color = gradient.eval_continuous(in_pixel / self.max_height);
+                *out_pixel = Rgb([color.r, color.g, color.b]);
+            });
+
+        image
     }
 
     /// Create a new [`HeightMap`] with data of [`f64::NAN`].
@@ -452,16 +466,10 @@ fn linear_at(
     }
 
     let outer_height = outer.height;
-    let distance_to_outer = outer_distance_field
-        .get_pixel(point.x, point.y)
-        .0[0]
-        .sqrt();
+    let distance_to_outer = outer_distance_field.get_pixel(point.x, point.y).0[0].sqrt();
 
     let inner_height = inners[0].height;
-    let distance_to_inner = inner_distance_field
-        .get_pixel(point.x, point.y)
-        .0[0]
-        .sqrt();
+    let distance_to_inner = inner_distance_field.get_pixel(point.x, point.y).0[0].sqrt();
 
     let total_distance = distance_to_outer + distance_to_inner;
 
