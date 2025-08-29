@@ -92,7 +92,7 @@ pub fn get_contour_line_tree_from(
 
     // To grayscale, and then we can find contours
     let grayscale = dyn_img.into_luma8();
-    let mut contours = imageproc::contours::find_contours(&grayscale);
+    let mut contours = imageproc::contours::find_contours_with_threshold(&grayscale, 64);
 
     // find_contours finds outer and inner contours. We only retain outers as representation
     retain_outer(&mut contours);
