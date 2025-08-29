@@ -580,28 +580,22 @@ fn create_progress_bar(len: u64, msg: impl Into<Cow<'static, str>>) -> ProgressB
 }
 
 #[cfg(test)]
-mod test {
-    use std::path::Path;
-
+mod tests {
     use crate::{contour_line, heightmap::HeightMap};
 
     const GAP: f64 = 50.0;
 
     #[test]
     fn test_one_hill_removed_and_two_hills_have_same_linear_height_at_same_point() {
-        let file_path_one_hill_removed = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("assets/one_hill_removed_from_two_hills.jpg");
-        let (contour_lines_one_hill_removed, w, h) = contour_line::get_contour_line_tree_from(
-            file_path_one_hill_removed.to_str().unwrap(),
-            GAP,
-        );
+        let file_path_one_hill_removed = "test_assets/one_hill_removed_from_two_hills.jpg";
+        let (contour_lines_one_hill_removed, w, h) =
+            contour_line::get_contour_line_tree_from(file_path_one_hill_removed, GAP);
         let one_hill_removed_heightmap =
             HeightMap::new_linear(contour_lines_one_hill_removed, GAP, w, h);
 
-        let file_path_two_hills =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.jpg");
+        let file_path_two_hills = "test_assets/two_hills.jpg";
         let (contour_lines_two_hills, w, h) =
-            contour_line::get_contour_line_tree_from(file_path_two_hills.to_str().unwrap(), GAP);
+            contour_line::get_contour_line_tree_from(file_path_two_hills, GAP);
         let two_hills_heightmap = HeightMap::new_linear(contour_lines_two_hills, GAP, w, h);
 
         let point_y = 114;
@@ -619,9 +613,8 @@ mod test {
 
     #[test]
     fn test_flat_fill_layer_one_hill() {
-        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/one_hill.jpg");
-        let (contour_lines, w, h) =
-            contour_line::get_contour_line_tree_from(file_path.to_str().unwrap(), GAP);
+        let file_path = "test_assets/one_hill.jpg";
+        let (contour_lines, w, h) = contour_line::get_contour_line_tree_from(file_path, GAP);
         let heightmap = HeightMap::new_flat(contour_lines, GAP, w, h);
 
         // x=15, y=79
@@ -642,9 +635,8 @@ mod test {
 
     #[test]
     fn test_flat_fill_layer_two_hills() {
-        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.jpg");
-        let (contour_lines, w, h) =
-            contour_line::get_contour_line_tree_from(file_path.to_str().unwrap(), GAP);
+        let file_path = "test_assets/two_hills.jpg";
+        let (contour_lines, w, h) = contour_line::get_contour_line_tree_from(file_path, GAP);
         let heightmap = HeightMap::new_flat(contour_lines, GAP, w, h);
 
         // x=24, y=185
