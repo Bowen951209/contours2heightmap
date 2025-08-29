@@ -85,18 +85,16 @@ pub fn run() {
     info!("Creating contour line tree...");
     let (contour_lines, image_width, image_height) =
         contour_line::get_contour_line_tree_from(&args.input_path, args.gap);
-    info!("Contour lines count = {}", contour_lines.size());
+    debug!("Contour lines count = {}", contour_lines.size());
     info!("Contour line tree created in {:?}", start.elapsed());
 
     let start = Instant::now();
     info!("Filling heightmap...");
     let heightmap = match args.fill_mode {
         FillMode::Flat => {
-            debug!("Using flat fill.");
             HeightMap::new_flat(contour_lines, args.gap, image_width, image_height)
         }
         FillMode::Linear => {
-            debug!("Using linear fill");
             HeightMap::new_linear(contour_lines, args.gap, image_width, image_height)
         }
     };
