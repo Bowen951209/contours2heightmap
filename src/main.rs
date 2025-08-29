@@ -1,6 +1,8 @@
 use contours2heightmap::run;
 
 fn main() {
+    pretty_env_logger::init();
+    
     run();
-    println!("Program finished.");
+    log::info!("Program finished.");
 }

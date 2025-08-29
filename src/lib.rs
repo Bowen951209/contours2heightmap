@@ -10,6 +10,7 @@ use colorous::Gradient;
 use font::load_sans;
 use heightmap::HeightMap;
 use imageproc::image::DynamicImage;
+use log::{info, debug};
 
 // Rust currently does not support reflection to constants, so we need to manually keep these.
 macro_rules! define_colormode {
@@ -81,25 +82,25 @@ pub fn run() {
     let args = Args::parse();
 
     let start = Instant::now();
-    println!("Creating contour line tree...");
+    info!("Creating contour line tree...");
     let (contour_lines, image_width, image_height) =
         contour_line::get_contour_line_tree_from(&args.input_path, args.gap);
-    println!("Contour lines count = {}", contour_lines.size());
-    println!("Contour line tree created in {:?}", start.elapsed());
+    info!("Contour lines count = {}", contour_lines.size());
+    info!("Contour line tree created in {:?}", start.elapsed());
 
     let start = Instant::now();
-    println!("Filling heightmap...");
+    info!("Filling heightmap...");
     let heightmap = match args.fill_mode {
         FillMode::Flat => {
-            println!("Using flat fill.");
+            debug!("Using flat fill.");
             HeightMap::new_flat(contour_lines, args.gap, image_width, image_height)
         }
         FillMode::Linear => {
-            println!("Using linear fill");
+            debug!("Using linear fill");
             HeightMap::new_linear(contour_lines, args.gap, image_width, image_height)
         }
     };
-    println!("Heightmap filled in {:?}", start.elapsed());
+    info!("Heightmap filled in {:?}", start.elapsed());
 
     let mut heightmap_image = match args.color_mode {
         ColorMode::Greys => DynamicImage::from(heightmap.to_gray16()), // we want gray16 image, not rgb
@@ -107,7 +108,7 @@ pub fn run() {
     };
 
     if args.draw_contours {
-        println!("Drawing contour lines...");
+        info!("Drawing contour lines...");
 
         // Ensure the image is in RGB format before drawing colored contour lines.
         // If the image is already RGB, this has no effect; if grayscale, it converts to RGB.
@@ -119,12 +120,12 @@ pub fn run() {
             &heightmap.contour_line_tree,
             &font,
         );
-        println!("Contour lines drawn.");
+        info!("Contour lines drawn.");
     }
 
-    println!("Saving file...");
+    info!("Saving file...");
     heightmap_image
         .save(&args.output_path)
         .expect("Failed to save file.");
-    println!("File saved to {:?}", &args.output_path);
+    info!("File saved to {:?}", &args.output_path);
 }
