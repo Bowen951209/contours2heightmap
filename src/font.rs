@@ -1,4 +1,5 @@
 use ab_glyph::FontVec;
+use log::debug;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -6,7 +7,7 @@ use std::path::Path;
 pub fn load_sans() -> FontVec {
     let font_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/OpenSans-Medium.ttf");
 
-    println!("Loading font from: {:?}", font_path);
+    debug!("Loading font from: {:?}", font_path);
 
     let mut data = Vec::new();
     File::open(&font_path)
