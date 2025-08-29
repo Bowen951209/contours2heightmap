@@ -10,7 +10,7 @@ use colorous::Gradient;
 use font::load_sans;
 use heightmap::HeightMap;
 use imageproc::image::DynamicImage;
-use log::{info, debug};
+use log::{debug, error, info};
 
 // Rust currently does not support reflection to constants, so we need to manually keep these.
 macro_rules! define_colormode {
@@ -85,15 +85,17 @@ pub fn run() {
     info!("Creating contour line tree...");
     let (contour_lines, image_width, image_height) =
         contour_line::get_contour_line_tree_from(&args.input_path, args.gap);
+    if contour_lines.size() == 0 {
+        error!("No contour lines found in the input image. Exiting.");
+        return;
+    }
     debug!("Contour lines count = {}", contour_lines.size());
     info!("Contour line tree created in {:?}", start.elapsed());
 
     let start = Instant::now();
     info!("Filling heightmap...");
     let heightmap = match args.fill_mode {
-        FillMode::Flat => {
-            HeightMap::new_flat(contour_lines, args.gap, image_width, image_height)
-        }
+        FillMode::Flat => HeightMap::new_flat(contour_lines, args.gap, image_width, image_height),
         FillMode::Linear => {
             HeightMap::new_linear(contour_lines, args.gap, image_width, image_height)
         }
