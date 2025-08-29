@@ -128,3 +128,18 @@ pub fn run() {
         .expect("Failed to save file.");
     println!("File saved to {:?}", &args.output_path);
 }
+
+trait EuclideanDistance {
+    fn distance_squared(&self, other: &Self) -> f64;
+    fn distance(&self, other: &Self) -> f64 {
+        self.distance_squared(other).sqrt()
+    }
+}
+
+impl EuclideanDistance for imageproc::point::Point<u32> {
+    fn distance_squared(&self, other: &Self) -> f64 {
+        let dx = self.x as i32 - other.x as i32;
+        let dy = self.y as i32 - other.y as i32;
+        (dx * dx + dy * dy) as f64
+    }
+}

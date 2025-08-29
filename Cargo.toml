@@ -17,3 +17,6 @@ rayon = "1.10.0"
 rstar = "0.12.2"
 ordered-float = "5.0.0"
 colorous = "1.0.16"
+
+[dev-dependencies]
+more-asserts = "0.3.1"

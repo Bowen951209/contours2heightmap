@@ -3,6 +3,7 @@ use std::path::Path;
 use imageproc::{
     contours::{BorderType, Contour},
     image::{self},
+    point::Point,
 };
 use ordered_float::OrderedFloat;
 use rstar::{AABB, Envelope, RTree, RTreeObject};
@@ -50,6 +51,17 @@ impl ContourLine {
         }
 
         inside
+    }
+
+    /// Calculate the center of mass of the contour line.
+    pub fn center_of_mass(&self) -> Point<u32> {
+        let mut sum = Point::new(0, 0);
+        for p in &self.contour.points {
+            sum += *p;
+        }
+
+        let count = self.contour.points.len() as u32;
+        Point::new(sum.x / count, sum.y / count)
     }
 }
 

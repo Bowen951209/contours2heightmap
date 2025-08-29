@@ -14,11 +14,15 @@ use rstar::RTree;
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet, VecDeque},
+    hash::{Hash, Hasher},
     sync::Arc,
     vec,
 };
 
-use crate::contour_line::{ContourLine, ContourLineInterval, find_contour_line_interval};
+use crate::{
+    EuclideanDistance,
+    contour_line::{ContourLine, ContourLineInterval, find_contour_line_interval},
+};
 
 /// The mode of distance calculation.
 /// This is for [`HeightMap::distance_transform`]
@@ -63,7 +67,8 @@ impl HeightMap {
             .par_iter_mut()
             .zip(self.data.par_iter())
             .for_each(|(out_pixel, &in_pixel)| {
-                let scaled_value = (in_pixel / self.max_height * u16::MAX as f64) as u16;
+                let scaled_value =
+                    (in_pixel / (self.max_height + self.gap) * u16::MAX as f64) as u16;
                 *out_pixel = scaled_value;
             });
 
@@ -79,7 +84,7 @@ impl HeightMap {
             .par_pixels_mut()
             .zip(self.data.par_iter())
             .for_each(|(out_pixel, &in_pixel)| {
-                let color = gradient.eval_continuous(in_pixel / self.max_height);
+                let color = gradient.eval_continuous(in_pixel / (self.max_height + self.gap));
                 *out_pixel = Rgb([color.r, color.g, color.b]);
             });
 
@@ -224,6 +229,17 @@ impl HeightMap {
                 ))),
         );
 
+        let mut peak_points = HashMap::new();
+
+        for cl in self
+            .contour_line_tree
+            .iter()
+            .filter(|cl| cl.height == self.max_height)
+        {
+            let center_of_mass = cl.center_of_mass();
+            peak_points.insert(RefKey(cl), center_of_mass);
+        }
+
         // Process rows in parallel
         self.data
             .par_iter_mut()
@@ -240,6 +256,15 @@ impl HeightMap {
                     &outer_distance_field,
                     &inner_distance_field,
                 );
+
+                if value.is_nan() {
+                    let outer = interval.outer.unwrap();
+                    let distance_to_outer = outer_distance_field.get_pixel(x, y).0[0];
+                    let peak = peak_points.get(&RefKey(outer)).unwrap();
+                    let distance_to_peak = peak.distance(&point);
+                    let t = distance_to_outer / (distance_to_outer + distance_to_peak);
+                    *value = lerp(self.max_height, self.max_height + self.gap, t);
+                }
             });
     }
 
@@ -398,6 +423,21 @@ struct PixelPtr(*mut f64);
 unsafe impl Send for PixelPtr {}
 unsafe impl Sync for PixelPtr {}
 
+#[derive(Debug)]
+struct RefKey<'a, T>(&'a T);
+
+impl<'a, T> PartialEq for RefKey<'a, T> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.0, other.0)
+    }
+}
+impl<'a, T> Eq for RefKey<'a, T> {}
+impl<'a, T> Hash for RefKey<'a, T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        (self.0 as *const T).hash(state);
+    }
+}
+
 /// The parabola lower-envelope structure describe in
 /// [Distance Transforms of Sampled Functions](https://www.cs.cornell.edu/~dph/papers/dt.pdf)
 struct Envelope {
@@ -462,7 +502,7 @@ fn linear_at(
     };
 
     if inners.is_empty() {
-        return outer.height;
+        return f64::NAN;
     }
 
     let outer_height = outer.height;
@@ -583,6 +623,8 @@ fn create_progress_bar(len: u64, msg: impl Into<Cow<'static, str>>) -> ProgressB
 mod test {
     use std::path::Path;
 
+    use more_asserts::assert_gt;
+
     use crate::{contour_line, heightmap::HeightMap};
 
     const GAP: f64 = 50.0;
@@ -683,5 +725,18 @@ mod test {
 
         // x=91, y=111
         assert_eq!(heightmap.data.get_pixel(91, 111).0[0], GAP * 8.0);
+    }
+
+    #[test]
+    fn test_linear_top_layer_point_closer_to_peak_is_higher() {
+        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/one_hill.png");
+        let (contour_lines, w, h) =
+            contour_line::get_contour_line_tree_from(file_path.to_str().unwrap(), GAP);
+        let heightmap = HeightMap::new_linear(contour_lines, GAP, w, h);
+
+        assert_gt!(
+            heightmap.data.get_pixel(139, 93).0[0],
+            heightmap.data.get_pixel(152, 107).0[0]
+        );
     }
 }
