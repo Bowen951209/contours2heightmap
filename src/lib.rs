@@ -1,13 +1,12 @@
 mod contour_line;
 mod draw;
-mod font;
 mod heightmap;
 
 use std::{path::PathBuf, time::Instant};
 
+use ab_glyph::FontRef;
 use clap::{Parser, ValueEnum, command};
 use colorous::Gradient;
-use font::load_sans;
 use heightmap::HeightMap;
 use imageproc::image::DynamicImage;
 use log::{debug, error, info};
@@ -114,7 +113,9 @@ pub fn run() {
         // If the image is already RGB, this has no effect; if grayscale, it converts to RGB.
         heightmap_image = DynamicImage::from(heightmap_image.into_rgb8());
 
-        let font = load_sans();
+        let font = FontRef::try_from_slice(include_bytes!("OpenSans-Medium.ttf"))
+            .expect("Failed to load font");
+        debug!("OpenSans-Medium font loaded");
         draw::draw_contour_lines_with_text(
             heightmap_image.as_mut_rgb8().unwrap(),
             &heightmap.contour_line_tree,
