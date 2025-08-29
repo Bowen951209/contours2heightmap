@@ -2,19 +2,21 @@ mod contour_line;
 mod draw;
 mod heightmap;
 
-use std::{path::PathBuf, time::Instant};
+use std::{env, fmt, path::PathBuf, time::Instant};
 
+use crate::contour_line::ContourLine;
 use ab_glyph::FontRef;
 use clap::{Parser, ValueEnum, command};
 use colorous::Gradient;
 use heightmap::HeightMap;
 use imageproc::image::DynamicImage;
 use log::{debug, error, info};
+use rstar::RTree;
 
 // Rust currently does not support reflection to constants, so we need to manually keep these.
 macro_rules! define_colormode {
     ( $( $name:ident => $grad:ident ),* $(,)? ) => {
-        #[derive(Debug, Clone, ValueEnum)]
+        #[derive(Debug, Clone, Copy, ValueEnum)]
         pub enum ColorMode {
             $( $name ),*
         }
@@ -49,6 +51,21 @@ pub enum FillMode {
     Linear,
 }
 
+#[derive(Debug, Clone)]
+pub enum CreateContourLineError {
+    ContoursNotFound,
+}
+
+impl fmt::Display for CreateContourLineError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            CreateContourLineError::ContoursNotFound => {
+                write!(f, "No contour lines found in the input image.")
+            }
+        }
+    }
+}
+
 #[derive(Parser)]
 #[command(name = "c2h")]
 #[command(about = "Convert contour images to heightmaps")]
@@ -78,55 +95,106 @@ pub struct Args {
 }
 
 pub fn run() {
+    init_logging();
     let args = Args::parse();
 
+    let (contour_lines, image_width, image_height) = create_contour_line_tree(&args)
+        .unwrap_or_else(|e| {
+            error!("Error creating contour line tree: {e}");
+            std::process::exit(1);
+        });
+    let heightmap = fill_heightmap(
+        args.fill_mode,
+        args.gap,
+        contour_lines,
+        image_width,
+        image_height,
+    );
+    let mut image = create_heightmap_image(args.color_mode, &heightmap);
+
+    if args.draw_contours {
+        draw_contours_on_image(&mut image, &heightmap);
+    }
+
+    save_image(&image, &args.output_path);
+    info!("Program finished.");
+}
+
+fn init_logging() {
+    if env::var("RUST_LOG").is_err() {
+        unsafe {
+            env::set_var("RUST_LOG", "trace");
+        }
+        pretty_env_logger::init();
+        info!("RUST_LOG not set, defaulting to 'trace'");
+    } else {
+        pretty_env_logger::init();
+    }
+}
+
+fn create_contour_line_tree(
+    args: &Args,
+) -> Result<(RTree<ContourLine>, u32, u32), CreateContourLineError> {
     let start = Instant::now();
     info!("Creating contour line tree...");
     let (contour_lines, image_width, image_height) =
         contour_line::get_contour_line_tree_from(&args.input_path, args.gap);
+
     if contour_lines.size() == 0 {
-        error!("No contour lines found in the input image. Exiting.");
-        return;
+        return Err(CreateContourLineError::ContoursNotFound);
     }
+
     debug!("Contour lines count = {}", contour_lines.size());
     info!("Contour line tree created in {:?}", start.elapsed());
 
+    Ok((contour_lines, image_width, image_height))
+}
+
+fn fill_heightmap(
+    fill_mode: FillMode,
+    gap: f64,
+    contour_lines: RTree<ContourLine>,
+    image_width: u32,
+    image_height: u32,
+) -> HeightMap {
     let start = Instant::now();
     info!("Filling heightmap...");
-    let heightmap = match args.fill_mode {
-        FillMode::Flat => HeightMap::new_flat(contour_lines, args.gap, image_width, image_height),
-        FillMode::Linear => {
-            HeightMap::new_linear(contour_lines, args.gap, image_width, image_height)
-        }
+    let heightmap = match fill_mode {
+        FillMode::Flat => HeightMap::new_flat(contour_lines, gap, image_width, image_height),
+        FillMode::Linear => HeightMap::new_linear(contour_lines, gap, image_width, image_height),
     };
+
     info!("Heightmap filled in {:?}", start.elapsed());
+    heightmap
+}
 
-    let mut heightmap_image = match args.color_mode {
-        ColorMode::Greys => DynamicImage::from(heightmap.to_gray16()), // we want gray16 image, not rgb
-        _ => DynamicImage::from(heightmap.to_rgb_8(args.color_mode.into())),
-    };
-
-    if args.draw_contours {
-        info!("Drawing contour lines...");
-
-        // Ensure the image is in RGB format before drawing colored contour lines.
-        // If the image is already RGB, this has no effect; if grayscale, it converts to RGB.
-        heightmap_image = DynamicImage::from(heightmap_image.into_rgb8());
-
-        let font = FontRef::try_from_slice(include_bytes!("OpenSans-Medium.ttf"))
-            .expect("Failed to load font");
-        debug!("OpenSans-Medium font loaded");
-        draw::draw_contour_lines_with_text(
-            heightmap_image.as_mut_rgb8().unwrap(),
-            &heightmap.contour_line_tree,
-            &font,
-        );
-        info!("Contour lines drawn.");
+fn create_heightmap_image(color_mode: ColorMode, heightmap: &HeightMap) -> DynamicImage {
+    match color_mode {
+        ColorMode::Greys => DynamicImage::from(heightmap.to_gray16()),
+        _ => DynamicImage::from(heightmap.to_rgb_8(color_mode.into())),
     }
+}
 
+fn draw_contours_on_image(heightmap_image: &mut DynamicImage, heightmap: &HeightMap) {
+    info!("Drawing contour lines...");
+    *heightmap_image = DynamicImage::from(heightmap_image.to_rgb8());
+
+    let font = FontRef::try_from_slice(include_bytes!("OpenSans-Medium.ttf"))
+        .expect("Failed to load font");
+    debug!("OpenSans-Medium font loaded");
+
+    draw::draw_contour_lines_with_text(
+        heightmap_image.as_mut_rgb8().unwrap(),
+        &heightmap.contour_line_tree,
+        &font,
+    );
+    info!("Contour lines drawn.");
+}
+
+fn save_image(heightmap_image: &DynamicImage, output_path: &PathBuf) {
     info!("Saving file...");
     heightmap_image
-        .save(&args.output_path)
+        .save(output_path)
         .expect("Failed to save file.");
-    info!("File saved to {:?}", &args.output_path);
+    info!("File saved to {:?}", output_path);
 }
