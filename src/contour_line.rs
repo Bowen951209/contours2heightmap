@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn test_points_inside_one_hill() {
-        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/one_hill.png");
+        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/one_hill.jpg");
         let (tree, _, _) = get_contour_line_tree_from(file_path.to_str().unwrap(), GAP);
         let mut contour_lines = tree.iter().collect::<Vec<_>>();
         contour_lines.sort_by_key(|cl| OrderedFloat(cl.height));
@@ -202,7 +202,7 @@ mod tests {
 
     #[test]
     fn test_extremum_points_outside_one_hill() {
-        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/one_hill.png");
+        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/one_hill.jpg");
         let (tree, _, _) = get_contour_line_tree_from(file_path.to_str().unwrap(), GAP);
         let mut contour_lines = tree.iter().collect::<Vec<_>>();
         contour_lines.sort_by_key(|cl| OrderedFloat(cl.height));
@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn test_four_contour_lines_in_one_hill() {
-        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/one_hill.png");
+        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/one_hill.jpg");
         let (contour_lines, _, _) = get_contour_line_tree_from(file_path.to_str().unwrap(), GAP);
 
         assert_eq!(contour_lines.size(), 4);
@@ -221,7 +221,7 @@ mod tests {
 
     #[test]
     fn test_points_interval_two_hills() {
-        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.png");
+        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.jpg");
         let (tree, _, _) = get_contour_line_tree_from(file_path.to_str().unwrap(), GAP);
 
         let interval = find_contour_line_interval(242, 184, &tree, GAP);
@@ -235,7 +235,7 @@ mod tests {
 
     #[test]
     fn test_232_117_two_inners_two_hills() {
-        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.png");
+        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.jpg");
         let (tree, _, _) = get_contour_line_tree_from(file_path.to_str().unwrap(), GAP);
 
         let interval = find_contour_line_interval(232, 117, &tree, GAP);
@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn test_151_119_interval_greater_area_two_hills() {
-        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.png");
+        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.jpg");
         let (tree, _, _) = get_contour_line_tree_from(file_path.to_str().unwrap(), GAP);
 
         let inner = find_contour_line_interval(151, 119, &tree, GAP).inners[0];
@@ -261,7 +261,7 @@ mod tests {
 
     #[test]
     fn test_thirteen_contour_lines_in_two_hills() {
-        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.png");
+        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.jpg");
         let (contour_lines, _, _) = get_contour_line_tree_from(file_path.to_str().unwrap(), GAP);
 
         assert_eq!(contour_lines.size(), 13);

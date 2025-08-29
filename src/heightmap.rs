@@ -590,7 +590,7 @@ mod test {
     #[test]
     fn test_one_hill_removed_and_two_hills_have_same_linear_height_at_same_point() {
         let file_path_one_hill_removed = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("assets/one_hill_removed_from_two_hills.png");
+            .join("assets/one_hill_removed_from_two_hills.jpg");
         let (contour_lines_one_hill_removed, w, h) = contour_line::get_contour_line_tree_from(
             file_path_one_hill_removed.to_str().unwrap(),
             GAP,
@@ -599,7 +599,7 @@ mod test {
             HeightMap::new_linear(contour_lines_one_hill_removed, GAP, w, h);
 
         let file_path_two_hills =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.png");
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.jpg");
         let (contour_lines_two_hills, w, h) =
             contour_line::get_contour_line_tree_from(file_path_two_hills.to_str().unwrap(), GAP);
         let two_hills_heightmap = HeightMap::new_linear(contour_lines_two_hills, GAP, w, h);
@@ -619,7 +619,7 @@ mod test {
 
     #[test]
     fn test_flat_fill_layer_one_hill() {
-        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/one_hill.png");
+        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/one_hill.jpg");
         let (contour_lines, w, h) =
             contour_line::get_contour_line_tree_from(file_path.to_str().unwrap(), GAP);
         let heightmap = HeightMap::new_flat(contour_lines, GAP, w, h);
@@ -642,7 +642,7 @@ mod test {
 
     #[test]
     fn test_flat_fill_layer_two_hills() {
-        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.png");
+        let file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/two_hills.jpg");
         let (contour_lines, w, h) =
             contour_line::get_contour_line_tree_from(file_path.to_str().unwrap(), GAP);
         let heightmap = HeightMap::new_flat(contour_lines, GAP, w, h);
