@@ -52,16 +52,12 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: c2h-ubuntu-latest-${{ github.ref_name }}
           path: .
-      - uses: actions/download-artifact@v4
-        with:
-          name: c2h-windows-latest-${{ github.ref_name }}
-          path: .
-      - uses: actions/download-artifact@v4
-        with:
-          name: c2h-macos-latest-${{ github.ref_name }}
-          path: .
+
+      - name: Flatten artifacts
+        run: |
+          find . -type f -name "*.tar.gz" -exec mv {} . \;
+          find . -type f -name "*.zip" -exec mv {} . \;
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
