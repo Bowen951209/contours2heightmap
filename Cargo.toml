@@ -11,7 +11,8 @@ readme = "README.md"
 keywords = ["contour", "heightmap", "cli", "image", "topography"]
 categories = ["command-line-utilities", "graphics", "multimedia::images", "science::geo"]
 exclude = [
-    "test_assets/*"
+    "test_assets/*",
+    "gallery/*",
 ]
 
 [[bin]]
