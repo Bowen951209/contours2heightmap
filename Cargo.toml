@@ -1,6 +1,6 @@
 [package]
 name = "contours2heightmap"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 default-run = "c2h"
 authors = ["Bowen951209 <bowen951209@gmail.com>"]
@@ -13,6 +13,7 @@ categories = ["command-line-utilities", "graphics", "multimedia::images", "scien
 exclude = [
     "test_assets/*",
     "gallery/*",
+    ".github/*"
 ]
 
 [[bin]]
