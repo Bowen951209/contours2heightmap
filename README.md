@@ -29,4 +29,11 @@ cargo build --release
 
 ## Installation
 
-TODO: crates io installation; download from release
+- Install using Cargo from [crates.io](https://crates.io/crates/contours2heightmap):
+
+    ```bash
+    cargo install contours2heightmap
+    ```
+
+- Download a release from [GitHub Releases](https://github.com/Bowen951209/contours2heightmap/releases).
+
