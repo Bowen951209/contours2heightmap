@@ -43,7 +43,6 @@ impl HeightMap {
     /// This function will call `flat_fill` to fill the heightmap. The resulting heightmap will look like stairs or river terrace.
     pub fn new_flat(contour_line_tree: RTree<ContourLine>, gap: f64, w: u32, h: u32) -> Self {
         let mut heightmap = Self::new_raw(contour_line_tree, gap, w, h);
-        heightmap.draw_contour_lines();
         heightmap.flat_fill();
         heightmap
     }
@@ -104,20 +103,27 @@ impl HeightMap {
 
     fn flat_fill(&mut self) {
         let (w, h) = self.data.dimensions();
+        self.draw_contour_lines();
 
-        let pb = create_progress_bar(self.contour_line_tree.size() as u64, "Flood filling");
+        let pb = create_progress_bar((w * h) as u64, "Flood filling");
 
         for y in 0..h {
             for x in 0..w {
                 if !self.data.get_pixel(x, y).0[0].is_nan() {
+                    pb.inc(1);
                     continue;
                 }
 
-                let interval = find_contour_line_interval(x, y, &self.contour_line_tree, self.gap);
-
-                let height = match interval.outer {
-                    Some(outside) => outside.height,
-                    None => 0.0,
+                let height = if x > 0 && !self.data.get_pixel(x - 1, y).0[0].is_nan() {
+                    self.data.get_pixel(x - 1, y).0[0]
+                } else if x + 1 < w && !self.data.get_pixel(x + 1, y).0[0].is_nan() {
+                    self.data.get_pixel(x + 1, y).0[0]
+                } else if y > 0 && !self.data.get_pixel(x, y - 1).0[0].is_nan() {
+                    self.data.get_pixel(x, y - 1).0[0]
+                } else if y + 1 < h && !self.data.get_pixel(x, y + 1).0[0].is_nan() {
+                    self.data.get_pixel(x, y + 1).0[0]
+                } else {
+                    0.0
                 };
 
                 flood_fill(
@@ -131,7 +137,6 @@ impl HeightMap {
                 );
 
                 pb.set_message(format!("Flood filled at ({x}, {y})"));
-                pb.inc(1);
             }
         }
 
