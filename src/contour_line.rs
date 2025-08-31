@@ -86,12 +86,10 @@ pub fn get_contour_lines_from(
 pub fn find_contour_line_interval(
     x: u32,
     y: u32,
-    contour_lines: &Vec<ContourLine>,
+    sorted_contour_lines: &Vec<ContourLine>,
     gap: f64,
 ) -> ContourLineInterval<'_> {
-    // Sort contour lines by height
-    let mut sorted_contour_lines = contour_lines.iter().collect::<Vec<_>>();
-    sorted_contour_lines.sort_by_key(|cl| OrderedFloat(cl.height));
+    debug_assert!(sorted_contour_lines.is_sorted_by_key(|cl| OrderedFloat(cl.height)));
 
     // Identify the outer contour line
     let outer_contour_line = sorted_contour_lines
@@ -102,7 +100,7 @@ pub fn find_contour_line_interval(
     // Collect inner contour lines
     let inner_contour_lines = outer_contour_line.map_or(vec![], |outer| {
         let target_height = outer.height + gap;
-        contour_lines
+        sorted_contour_lines
             .iter()
             .filter(|cl| cl.height == target_height)
             .filter(|cl| {
@@ -130,6 +128,7 @@ fn to_contour_lines(contours: Vec<Contour<u32>>, gap: f64) -> Vec<ContourLine> {
 
 /// Use the passed in contour lines to set the heights of each contour line from outer to inner.
 /// The outmost contour line will have the lowest height, and the innermost contour line will have the highest height.
+/// This function also sorts `contour_lines` by the height.
 fn set_heights(contour_lines: &mut Vec<ContourLine>, gap: f64) {
     unsafe {
         let ptr = contour_lines.as_ptr();
@@ -151,6 +150,8 @@ fn set_heights(contour_lines: &mut Vec<ContourLine>, gap: f64) {
             cl.height = gap * count_plus_1 as f64;
         }
     }
+
+    contour_lines.sort_by_key(|cl| OrderedFloat(cl.height));
 }
 
 #[cfg(test)]
