@@ -2,13 +2,12 @@ use ab_glyph::{Font, PxScale, ScaleFont};
 use imageproc::definitions::Clamp;
 use imageproc::drawing::Canvas;
 use imageproc::image::{Pixel, Rgb, RgbImage};
-use rstar::RTree;
 
 use crate::contour_line::ContourLine;
 
 pub fn draw_contour_lines_with_text(
     image: &mut RgbImage,
-    contour_lines: &RTree<ContourLine>,
+    contour_lines: &Vec<ContourLine>,
     font: &impl Font,
 ) {
     for contour_line in contour_lines {

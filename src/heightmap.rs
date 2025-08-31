@@ -10,7 +10,6 @@ use indicatif::{
 };
 use ordered_float::OrderedFloat;
 use rayon::prelude::*;
-use rstar::RTree;
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet, VecDeque},
@@ -32,7 +31,7 @@ enum DistanceMode {
 
 pub struct HeightMap {
     pub data: Image<Luma<f64>>,
-    pub contour_line_tree: RTree<ContourLine>,
+    pub contour_lines: Vec<ContourLine>,
     /// The height gap between contour lines
     pub gap: f64,
     max_height: f64,
@@ -41,15 +40,15 @@ pub struct HeightMap {
 impl HeightMap {
     /// Return a flat-filled heightmap based on the passed in `contour_lines` and the given width and height.
     /// This function will call `flat_fill` to fill the heightmap. The resulting heightmap will look like stairs or river terrace.
-    pub fn new_flat(contour_line_tree: RTree<ContourLine>, gap: f64, w: u32, h: u32) -> Self {
-        let mut heightmap = Self::new_raw(contour_line_tree, gap, w, h);
+    pub fn new_flat(contour_lines: Vec<ContourLine>, gap: f64, w: u32, h: u32) -> Self {
+        let mut heightmap = Self::new_raw(contour_lines, gap, w, h);
         heightmap.draw_contour_lines();
         heightmap.flat_fill();
         heightmap
     }
 
-    pub fn new_linear(contour_line_tree: RTree<ContourLine>, gap: f64, w: u32, h: u32) -> Self {
-        let mut heightmap = Self::new_raw(contour_line_tree, gap, w, h);
+    pub fn new_linear(contour_lines: Vec<ContourLine>, gap: f64, w: u32, h: u32) -> Self {
+        let mut heightmap = Self::new_raw(contour_lines, gap, w, h);
         heightmap.linear_fill();
         heightmap
     }
@@ -87,8 +86,8 @@ impl HeightMap {
     }
 
     /// Create a new [`HeightMap`] with data of [`f64::NAN`].
-    fn new_raw(contour_line_tree: RTree<ContourLine>, gap: f64, w: u32, h: u32) -> Self {
-        let max_height = contour_line_tree
+    fn new_raw(contour_lines: Vec<ContourLine>, gap: f64, w: u32, h: u32) -> Self {
+        let max_height = contour_lines
             .iter()
             .map(|cl| cl.height)
             .max_by_key(|h| OrderedFloat(*h))
@@ -96,7 +95,7 @@ impl HeightMap {
 
         Self {
             data: Image::from_pixel(w, h, Luma([f64::NAN])),
-            contour_line_tree,
+            contour_lines,
             max_height,
             gap,
         }
@@ -105,7 +104,7 @@ impl HeightMap {
     fn flat_fill(&mut self) {
         let (w, h) = self.data.dimensions();
 
-        let pb = create_progress_bar(self.contour_line_tree.size() as u64, "Flood filling");
+        let pb = create_progress_bar(self.contour_lines.len() as u64, "Flood filling");
 
         for y in 0..h {
             for x in 0..w {
@@ -113,7 +112,7 @@ impl HeightMap {
                     continue;
                 }
 
-                let interval = find_contour_line_interval(x, y, &self.contour_line_tree, self.gap);
+                let interval = find_contour_line_interval(x, y, &self.contour_lines, self.gap);
 
                 let height = match interval.outer {
                     Some(outside) => outside.height,
@@ -148,10 +147,10 @@ impl HeightMap {
         // This is for building walls between different levels for the following flood fill.
         let multi_progress = MultiProgress::new();
         let pb = multi_progress.add(create_progress_bar(
-            self.contour_line_tree.size() as u64,
+            self.contour_lines.len() as u64,
             "Setting contour line points in interval map",
         ));
-        for cl in &self.contour_line_tree {
+        for cl in &self.contour_lines {
             for p in &cl.contour.points {
                 interval_map[(p.y * w + p.x) as usize] = Some(ContourLineInterval::new(cl, cl));
             }
@@ -162,7 +161,7 @@ impl HeightMap {
 
         // Flood fill interval_map
         let pb = multi_progress.add(create_progress_bar(
-            self.contour_line_tree.size() as u64,
+            self.contour_lines.len() as u64,
             "Flood filling interval map",
         ));
         for y in 0..h {
@@ -171,7 +170,7 @@ impl HeightMap {
                     continue;
                 }
 
-                let interval = find_contour_line_interval(x, y, &self.contour_line_tree, self.gap);
+                let interval = find_contour_line_interval(x, y, &self.contour_lines, self.gap);
 
                 flood_fill(
                     &mut interval_map,
@@ -276,7 +275,7 @@ impl HeightMap {
             HashMap::new();
 
         // Build point sets for each height level
-        for cl in &self.contour_line_tree {
+        for cl in &self.contour_lines {
             let height = cl.height;
             let point_set = contour_point_sets.entry(OrderedFloat(height)).or_default();
             for point in &cl.contour.points {
@@ -386,7 +385,7 @@ impl HeightMap {
 
     /// Set the points and height value to `data` for each contour line.
     fn draw_contour_lines(&mut self) {
-        for cl in &self.contour_line_tree {
+        for cl in &self.contour_lines {
             for p in &cl.contour.points {
                 self.data.draw_pixel(p.x, p.y, Luma([cl.height]));
             }
@@ -589,13 +588,13 @@ mod tests {
     fn test_one_hill_removed_and_two_hills_have_same_linear_height_at_same_point() {
         let file_path_one_hill_removed = "test_assets/one_hill_removed_from_two_hills.jpg";
         let (contour_lines_one_hill_removed, w, h) =
-            contour_line::get_contour_line_tree_from(file_path_one_hill_removed, GAP);
+            contour_line::get_contour_lines_from(file_path_one_hill_removed, GAP);
         let one_hill_removed_heightmap =
             HeightMap::new_linear(contour_lines_one_hill_removed, GAP, w, h);
 
         let file_path_two_hills = "test_assets/two_hills.jpg";
         let (contour_lines_two_hills, w, h) =
-            contour_line::get_contour_line_tree_from(file_path_two_hills, GAP);
+            contour_line::get_contour_lines_from(file_path_two_hills, GAP);
         let two_hills_heightmap = HeightMap::new_linear(contour_lines_two_hills, GAP, w, h);
 
         let point_y = 114;
@@ -614,7 +613,7 @@ mod tests {
     #[test]
     fn test_flat_fill_layer_one_hill() {
         let file_path = "test_assets/one_hill.jpg";
-        let (contour_lines, w, h) = contour_line::get_contour_line_tree_from(file_path, GAP);
+        let (contour_lines, w, h) = contour_line::get_contour_lines_from(file_path, GAP);
         let heightmap = HeightMap::new_flat(contour_lines, GAP, w, h);
 
         // x=15, y=79
@@ -636,7 +635,7 @@ mod tests {
     #[test]
     fn test_flat_fill_layer_two_hills() {
         let file_path = "test_assets/two_hills.jpg";
-        let (contour_lines, w, h) = contour_line::get_contour_line_tree_from(file_path, GAP);
+        let (contour_lines, w, h) = contour_line::get_contour_lines_from(file_path, GAP);
         let heightmap = HeightMap::new_flat(contour_lines, GAP, w, h);
 
         // x=24, y=185

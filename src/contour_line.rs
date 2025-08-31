@@ -5,28 +5,17 @@ use imageproc::{
     image::{self},
 };
 use ordered_float::OrderedFloat;
-use rstar::{AABB, Envelope, RTree, RTreeObject};
 
 pub struct ContourLine {
     pub contour: Contour<u32>,
     pub height: f64,
-    bbox: AABB<[i32; 2]>,
 }
 
 impl ContourLine {
     fn new(contour: Contour<u32>) -> Self {
-        let bbox = AABB::from_points(
-            &contour
-                .points
-                .iter()
-                .map(|p| [p.x as i32, p.y as i32])
-                .collect::<Vec<_>>(),
-        );
-
         Self {
             contour,
             height: 0.0,
-            bbox,
         }
     }
 
@@ -53,14 +42,6 @@ impl ContourLine {
     }
 }
 
-impl RTreeObject for ContourLine {
-    type Envelope = AABB<[i32; 2]>;
-
-    fn envelope(&self) -> Self::Envelope {
-        self.bbox
-    }
-}
-
 /// Indicates the inner and outer contour lines for a pixel.
 ///
 /// For a given pixel, there may be no outer contour line (the pixel is outside all contours),
@@ -82,10 +63,10 @@ impl<'a> ContourLineInterval<'a> {
     }
 }
 
-pub fn get_contour_line_tree_from(
+pub fn get_contour_lines_from(
     file_path: impl AsRef<Path>,
     gap: f64,
-) -> (RTree<ContourLine>, u32, u32) {
+) -> (Vec<ContourLine>, u32, u32) {
     // Load the image
     let dyn_img = image::open(file_path).expect("Failed to open image file");
     let (w, h) = (dyn_img.width(), dyn_img.height());
@@ -105,11 +86,11 @@ pub fn get_contour_line_tree_from(
 pub fn find_contour_line_interval(
     x: u32,
     y: u32,
-    contour_line_tree: &RTree<ContourLine>,
+    contour_lines: &Vec<ContourLine>,
     gap: f64,
 ) -> ContourLineInterval<'_> {
     // Sort contour lines by height
-    let mut sorted_contour_lines = contour_line_tree.iter().collect::<Vec<_>>();
+    let mut sorted_contour_lines = contour_lines.iter().collect::<Vec<_>>();
     sorted_contour_lines.sort_by_key(|cl| OrderedFloat(cl.height));
 
     // Identify the outer contour line
@@ -121,11 +102,13 @@ pub fn find_contour_line_interval(
     // Collect inner contour lines
     let inner_contour_lines = outer_contour_line.map_or(vec![], |outer| {
         let target_height = outer.height + gap;
-        let outer_envelope = outer.envelope();
-        contour_line_tree
+        contour_lines
             .iter()
             .filter(|cl| cl.height == target_height)
-            .filter(|cl| outer_envelope.contains_envelope(&cl.envelope()))
+            .filter(|cl| {
+                let point = cl.contour.points[0];
+                outer.is_point_inside(point.x, point.y)
+            })
             .collect()
     });
 
@@ -139,50 +122,49 @@ fn retain_outer<T>(contours: &mut Vec<Contour<T>>) {
     contours.retain(|c| c.border_type == BorderType::Outer);
 }
 
-fn to_contour_lines(contours: Vec<Contour<u32>>, gap: f64) -> RTree<ContourLine> {
-    let contour_lines = contours.into_iter().map(ContourLine::new).collect();
-    let mut tree = RTree::bulk_load(contour_lines);
-
-    set_heights(&mut tree, gap);
-    tree
+fn to_contour_lines(contours: Vec<Contour<u32>>, gap: f64) -> Vec<ContourLine> {
+    let mut contour_lines = contours.into_iter().map(ContourLine::new).collect();
+    set_heights(&mut contour_lines, gap);
+    contour_lines
 }
 
-/// Use the passed in contour lines RTree to set the heights of each contour line from outer to inner.
+/// Use the passed in contour lines to set the heights of each contour line from outer to inner.
 /// The outmost contour line will have the lowest height, and the innermost contour line will have the highest height.
-fn set_heights(tree: &mut RTree<ContourLine>, gap: f64) {
-    let mut heights = Vec::with_capacity(tree.size());
+fn set_heights(contour_lines: &mut Vec<ContourLine>, gap: f64) {
+    unsafe {
+        let ptr = contour_lines.as_ptr();
+        let len = contour_lines.len();
 
-    for cl in tree.iter() {
-        let outside_count = tree
-            .iter()
-            .filter(|c| c.envelope().contains_envelope(&cl.envelope()))
-            .count();
-        let height = outside_count as f64 * gap;
-        heights.push(height);
-    }
+        for (i, cl) in contour_lines.iter_mut().enumerate() {
+            let this_point = cl.contour.points[0];
+            let mut count_plus_1 = 1; // we want the first contour line to have height `gap`
+            for j in 0..len {
+                if j == i {
+                    continue; // this make sure it's safe
+                }
 
-    for (cl, height) in tree.iter_mut().zip(heights) {
-        cl.height = height;
+                let other = &*ptr.add(j);
+                if other.is_point_inside(this_point.x, this_point.y) {
+                    count_plus_1 += 1;
+                }
+            }
+            cl.height = gap * count_plus_1 as f64;
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::ptr;
-
-    use crate::contour_line::ContourLine;
-
-    use super::{find_contour_line_interval, get_contour_line_tree_from};
+    use super::{find_contour_line_interval, get_contour_lines_from};
     use ordered_float::OrderedFloat;
-    use rstar::Envelope;
 
     const GAP: f64 = 50.0;
 
     #[test]
     fn test_points_inside_one_hill() {
         let file_path = "test_assets/one_hill.jpg";
-        let (tree, _, _) = get_contour_line_tree_from(file_path, GAP);
-        let mut contour_lines = tree.iter().collect::<Vec<_>>();
+        let (contour_lines, _, _) = get_contour_lines_from(file_path, GAP);
+        let mut contour_lines = contour_lines.iter().collect::<Vec<_>>();
         contour_lines.sort_by_key(|cl| OrderedFloat(cl.height));
 
         assert!(contour_lines[0].is_point_inside(94, 23));
@@ -203,8 +185,8 @@ mod tests {
     #[test]
     fn test_extremum_points_outside_one_hill() {
         let file_path = "test_assets/one_hill.jpg";
-        let (tree, _, _) = get_contour_line_tree_from(file_path, GAP);
-        let mut contour_lines = tree.iter().collect::<Vec<_>>();
+        let (contour_lines, _, _) = get_contour_lines_from(file_path, GAP);
+        let mut contour_lines = contour_lines.iter().collect::<Vec<_>>();
         contour_lines.sort_by_key(|cl| OrderedFloat(cl.height));
 
         assert!(!contour_lines[0].is_point_inside(8, 15));
@@ -214,21 +196,21 @@ mod tests {
     #[test]
     fn test_four_contour_lines_in_one_hill() {
         let file_path = "test_assets/one_hill.jpg";
-        let (contour_lines, _, _) = get_contour_line_tree_from(file_path, GAP);
+        let (contour_lines, _, _) = get_contour_lines_from(file_path, GAP);
 
-        assert_eq!(contour_lines.size(), 4);
+        assert_eq!(contour_lines.len(), 4);
     }
 
     #[test]
     fn test_points_interval_two_hills() {
         let file_path = "test_assets/two_hills.jpg";
-        let (tree, _, _) = get_contour_line_tree_from(file_path, GAP);
+        let (contour_lines, _, _) = get_contour_lines_from(file_path, GAP);
 
-        let interval = find_contour_line_interval(242, 184, &tree, GAP);
+        let interval = find_contour_line_interval(242, 184, &contour_lines, GAP);
         assert_eq!(interval.outer.unwrap().height, GAP);
         assert_eq!(interval.inners[0].height, GAP * 2.0);
 
-        let interval = find_contour_line_interval(151, 135, &tree, GAP);
+        let interval = find_contour_line_interval(151, 135, &contour_lines, GAP);
         assert_eq!(interval.outer.unwrap().height, GAP * 2.0);
         assert_eq!(interval.inners[0].height, GAP * 3.0);
     }
@@ -236,34 +218,27 @@ mod tests {
     #[test]
     fn test_232_117_two_inners_two_hills() {
         let file_path = "test_assets/two_hills.jpg";
-        let (tree, _, _) = get_contour_line_tree_from(file_path, GAP);
+        let (contour_lines, _, _) = get_contour_lines_from(file_path, GAP);
 
-        let interval = find_contour_line_interval(232, 117, &tree, GAP);
+        let interval = find_contour_line_interval(232, 117, &contour_lines, GAP);
         let inners = interval.inners;
         assert_eq!(inners.len(), 2);
     }
 
     #[test]
-    fn test_151_119_interval_greater_area_two_hills() {
+    fn test_thirteen_contour_lines_in_two_hills() {
         let file_path = "test_assets/two_hills.jpg";
-        let (tree, _, _) = get_contour_line_tree_from(file_path, GAP);
+        let (contour_lines, _, _) = get_contour_lines_from(file_path, GAP);
 
-        let inner = find_contour_line_interval(151, 119, &tree, GAP).inners[0];
-
-        let another_gap_3: Vec<&ContourLine> = tree
-            .iter()
-            .filter(|cl| cl.height == GAP * 3.0 && !ptr::eq(*cl, inner))
-            .collect();
-        assert_eq!(another_gap_3.len(), 1);
-
-        assert!(inner.bbox.area() > another_gap_3[0].bbox.area());
+        assert_eq!(contour_lines.len(), 13);
     }
 
     #[test]
-    fn test_thirteen_contour_lines_in_two_hills() {
-        let file_path = "test_assets/two_hills.jpg";
-        let (contour_lines, _, _) = get_contour_line_tree_from(file_path, GAP);
+    fn test_concave_height_on_contour() {
+        let file_path = "test_assets/concave.jpg";
+        let (contour_lines, _, _) = get_contour_lines_from(file_path, GAP);
 
-        assert_eq!(contour_lines.size(), 13);
+        assert_eq!(contour_lines[0].height, GAP);
+        assert_eq!(contour_lines[1].height, GAP);
     }
 }
