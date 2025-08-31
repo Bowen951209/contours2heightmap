@@ -1,10 +1,11 @@
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use imageproc::{
     contours::{BorderType, Contour},
     image::{self},
 };
 use ordered_float::OrderedFloat;
+use rayon::prelude::*;
 
 pub struct ContourLine {
     pub contour: Contour<u32>,
@@ -62,6 +63,10 @@ impl<'a> ContourLineInterval<'a> {
         }
     }
 }
+
+struct ContourLinePtr(*const ContourLine);
+unsafe impl Send for ContourLinePtr {}
+unsafe impl Sync for ContourLinePtr {}
 
 pub fn get_contour_lines_from(
     file_path: impl AsRef<Path>,
@@ -131,24 +136,26 @@ fn to_contour_lines(contours: Vec<Contour<u32>>, gap: f64) -> Vec<ContourLine> {
 /// This function also sorts `contour_lines` by the height.
 fn set_heights(contour_lines: &mut Vec<ContourLine>, gap: f64) {
     unsafe {
-        let ptr = contour_lines.as_ptr();
+        let ptr = Arc::new(ContourLinePtr(contour_lines.as_ptr()));
         let len = contour_lines.len();
 
-        for (i, cl) in contour_lines.iter_mut().enumerate() {
-            let this_point = cl.contour.points[0];
-            let mut count_plus_1 = 1; // we want the first contour line to have height `gap`
-            for j in 0..len {
-                if j == i {
-                    continue; // this make sure it's safe
+        contour_lines
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(i, cl)| {
+                let this_point = cl.contour.points[0];
+                let mut count_plus_1 = 1;
+                for j in 0..len {
+                    if j == i {
+                        continue; // this makes sure safety
+                    }
+                    let other = &*ptr.0.add(j);
+                    if other.is_point_inside(this_point.x, this_point.y) {
+                        count_plus_1 += 1;
+                    }
                 }
-
-                let other = &*ptr.add(j);
-                if other.is_point_inside(this_point.x, this_point.y) {
-                    count_plus_1 += 1;
-                }
-            }
-            cl.height = gap * count_plus_1 as f64;
-        }
+                cl.height = gap * count_plus_1 as f64;
+            });
     }
 
     contour_lines.sort_by_key(|cl| OrderedFloat(cl.height));
