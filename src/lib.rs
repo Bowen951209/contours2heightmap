@@ -11,7 +11,6 @@ use colorous::Gradient;
 use heightmap::HeightMap;
 use imageproc::image::DynamicImage;
 use log::{debug, error, info};
-use rstar::RTree;
 
 // Rust currently does not support reflection to constants, so we need to manually keep these.
 macro_rules! define_colormode {
@@ -98,9 +97,9 @@ pub fn run() {
     init_logging();
     let args = Args::parse();
 
-    let (contour_lines, image_width, image_height) = create_contour_line_tree(&args)
-        .unwrap_or_else(|e| {
-            error!("Error creating contour line tree: {e}");
+    let (contour_lines, image_width, image_height) =
+        create_contour_lines(&args).unwrap_or_else(|e| {
+            error!("Error creating contour lines: {e}");
             std::process::exit(1);
         });
     let heightmap = fill_heightmap(
@@ -132,20 +131,20 @@ fn init_logging() {
     }
 }
 
-fn create_contour_line_tree(
+fn create_contour_lines(
     args: &Args,
-) -> Result<(RTree<ContourLine>, u32, u32), CreateContourLineError> {
+) -> Result<(Vec<ContourLine>, u32, u32), CreateContourLineError> {
     let start = Instant::now();
-    info!("Creating contour line tree...");
+    info!("Creating contour lines...");
     let (contour_lines, image_width, image_height) =
-        contour_line::get_contour_line_tree_from(&args.input_path, args.gap);
+        contour_line::get_contour_lines_from(&args.input_path, args.gap);
 
-    if contour_lines.size() == 0 {
+    if contour_lines.is_empty() {
         return Err(CreateContourLineError::ContoursNotFound);
     }
 
-    debug!("Contour lines count = {}", contour_lines.size());
-    info!("Contour line tree created in {:?}", start.elapsed());
+    debug!("Contour lines count = {}", contour_lines.len());
+    info!("Contour lines created in {:?}", start.elapsed());
 
     Ok((contour_lines, image_width, image_height))
 }
@@ -153,7 +152,7 @@ fn create_contour_line_tree(
 fn fill_heightmap(
     fill_mode: FillMode,
     gap: f64,
-    contour_lines: RTree<ContourLine>,
+    contour_lines: Vec<ContourLine>,
     image_width: u32,
     image_height: u32,
 ) -> HeightMap {
@@ -185,7 +184,7 @@ fn draw_contours_on_image(heightmap_image: &mut DynamicImage, heightmap: &Height
 
     draw::draw_contour_lines_with_text(
         heightmap_image.as_mut_rgb8().unwrap(),
-        &heightmap.contour_line_tree,
+        &heightmap.contour_lines,
         &font,
     );
     info!("Contour lines drawn.");
