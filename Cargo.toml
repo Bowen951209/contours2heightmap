@@ -1,6 +1,6 @@
 [package]
 name = "contours2heightmap"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 default-run = "c2h"
 authors = ["Bowen951209 <bowen951209@gmail.com>"]
