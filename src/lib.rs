@@ -2,15 +2,15 @@ mod contour_line;
 mod draw;
 mod heightmap;
 
-use std::{env, fmt, path::PathBuf, time::Instant};
-
 use crate::contour_line::ContourLine;
 use ab_glyph::FontRef;
 use clap::{Parser, ValueEnum, command};
 use colorous::Gradient;
+use font_kit::{family_name::FamilyName, properties::Properties, source::SystemSource};
 use heightmap::HeightMap;
 use imageproc::image::DynamicImage;
 use log::{debug, error, info};
+use std::{env, fmt, path::PathBuf, sync::Arc, time::Instant};
 
 // Rust currently does not support reflection to constants, so we need to manually keep these.
 macro_rules! define_colormode {
@@ -178,9 +178,37 @@ fn draw_contours_on_image(heightmap_image: &mut DynamicImage, heightmap: &Height
     info!("Drawing contour lines...");
     *heightmap_image = DynamicImage::from(heightmap_image.to_rgb8());
 
-    let font = FontRef::try_from_slice(include_bytes!("OpenSans-Medium.ttf"))
-        .expect("Failed to load font");
-    debug!("OpenSans-Medium font loaded");
+    let font_handle = SystemSource::new()
+        .select_best_match(
+            &[
+                FamilyName::SansSerif,
+                FamilyName::Serif,
+                FamilyName::Monospace,
+            ],
+            &Properties::new(),
+        )
+        .expect("Failed to load system font.");
+
+    let (bytes, font_index) = match font_handle {
+        font_kit::handle::Handle::Path { path, font_index } => (
+            std::fs::read(path).expect("Failed to read font file."),
+            font_index,
+        ),
+        font_kit::handle::Handle::Memory { bytes, font_index } => {
+            let bytes = Arc::try_unwrap(bytes).unwrap_or_else(|arc| {
+                debug!("Arc has multiple owners, cloning font bytes");
+                arc.as_ref().clone()
+            });
+            (bytes, font_index)
+        }
+    };
+
+    let font = FontRef::try_from_slice_and_index(&bytes, font_index)
+        .expect("Failed to load font from bytes.")
+        .clone();
+
+    // TODO: write font family name and postscript name
+    debug!("Font loaded");
 
     draw::draw_contour_lines_with_text(
         heightmap_image.as_mut_rgb8().unwrap(),
