@@ -190,25 +190,19 @@ fn draw_contours_on_image(heightmap_image: &mut DynamicImage, heightmap: &Height
         .expect("Failed to load system font.");
 
     let (bytes, font_index) = match font_handle {
-        font_kit::handle::Handle::Path { path, font_index } => (
-            std::fs::read(path).expect("Failed to read font file."),
-            font_index,
-        ),
-        font_kit::handle::Handle::Memory { bytes, font_index } => {
-            let bytes = Arc::try_unwrap(bytes).unwrap_or_else(|arc| {
-                debug!("Arc has multiple owners, cloning font bytes");
-                arc.as_ref().clone()
-            });
-            (bytes, font_index)
+        font_kit::handle::Handle::Path { path, font_index } => {
+            let bytes = std::fs::read(path).expect("Failed to read font file.");
+            (Arc::new(bytes), font_index)
         }
+        font_kit::handle::Handle::Memory { bytes, font_index } => (bytes, font_index),
     };
 
-    let font = FontRef::try_from_slice_and_index(&bytes, font_index)
+    let bytes1 = bytes.clone();
+    let font = FontRef::try_from_slice_and_index(&bytes1, font_index)
         .expect("Failed to load font from bytes.")
         .clone();
 
-    // TODO: write font family name and postscript name
-    debug!("Font loaded");
+    debug!("Font {} loaded", get_font_name(bytes, font_index));
 
     draw::draw_contour_lines_with_text(
         heightmap_image.as_mut_rgb8().unwrap(),
@@ -224,4 +218,19 @@ fn save_image(heightmap_image: &DynamicImage, output_path: &PathBuf) {
         .save(output_path)
         .expect("Failed to save file.");
     info!("File saved to {:?}", output_path);
+}
+
+/// Returns the font family and PostScript name for a font loaded from bytes.
+/// Constructs a `font-kit::font::Font` from the provided bytes and index and returns a
+/// string in the format `FamilyName-PostScriptName`.
+fn get_font_name(bytes: Arc<Vec<u8>>, font_index: u32) -> String {
+    let font = font_kit::font::Font::from_bytes(bytes, font_index)
+        .expect("Failed to create font from bytes.");
+
+    format!(
+        "{}-{}",
+        font.family_name(),
+        font.postscript_name()
+            .unwrap_or("Unknown PostScript".to_string())
+    )
 }
