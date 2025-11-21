@@ -91,14 +91,14 @@ pub fn get_contour_lines_from(
 pub fn find_contour_line_interval(
     x: u32,
     y: u32,
-    sorted_contour_lines: &Vec<ContourLine>,
+    sorted_contour_lines: &[ContourLine],
     gap: f64,
 ) -> ContourLineInterval<'_> {
     debug_assert!(sorted_contour_lines.is_sorted_by_key(|cl| OrderedFloat(cl.height)));
 
     // Identify the outer contour line
     let outer_contour_line = sorted_contour_lines
-        .into_iter()
+        .iter()
         .rev()
         .find(|cl| cl.is_point_inside(x, y));
 

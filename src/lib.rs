@@ -2,15 +2,15 @@ mod contour_line;
 mod draw;
 mod heightmap;
 
-use std::{env, fmt, path::PathBuf, time::Instant};
-
 use crate::contour_line::ContourLine;
 use ab_glyph::FontRef;
 use clap::{Parser, ValueEnum, command};
 use colorous::Gradient;
+use font_kit::{family_name::FamilyName, properties::Properties, source::SystemSource};
 use heightmap::HeightMap;
 use imageproc::image::DynamicImage;
 use log::{debug, error, info};
+use std::{env, fmt, path::PathBuf, sync::Arc, time::Instant};
 
 // Rust currently does not support reflection to constants, so we need to manually keep these.
 macro_rules! define_colormode {
@@ -178,9 +178,35 @@ fn draw_contours_on_image(heightmap_image: &mut DynamicImage, heightmap: &Height
     info!("Drawing contour lines...");
     *heightmap_image = DynamicImage::from(heightmap_image.to_rgb8());
 
-    let font = FontRef::try_from_slice(include_bytes!("OpenSans-Medium.ttf"))
-        .expect("Failed to load font");
-    debug!("OpenSans-Medium font loaded");
+    let font_handle = SystemSource::new()
+        .select_best_match(
+            &[
+                FamilyName::SansSerif,
+                FamilyName::Serif,
+                FamilyName::Monospace,
+            ],
+            &Properties::new(),
+        )
+        .expect("Failed to load system font.");
+
+    let (bytes, font_index) = match font_handle {
+        font_kit::handle::Handle::Path { path, font_index } => {
+            debug!("Loading font from path: {path:?}");
+            let bytes = std::fs::read(path).expect("Failed to read font file.");
+            (Arc::new(bytes), font_index)
+        }
+        font_kit::handle::Handle::Memory { bytes, font_index } => {
+            debug!("Loading font from memory.");
+            (bytes, font_index)
+        }
+    };
+
+    let bytes1 = bytes.clone();
+    let font = FontRef::try_from_slice_and_index(&bytes1, font_index)
+        .expect("Failed to load font from bytes.")
+        .clone();
+
+    debug!("Font {} loaded", get_font_name(bytes, font_index));
 
     draw::draw_contour_lines_with_text(
         heightmap_image.as_mut_rgb8().unwrap(),
@@ -196,4 +222,19 @@ fn save_image(heightmap_image: &DynamicImage, output_path: &PathBuf) {
         .save(output_path)
         .expect("Failed to save file.");
     info!("File saved to {:?}", output_path);
+}
+
+/// Returns the font family and PostScript name for a font loaded from bytes.
+/// Constructs a `font-kit::font::Font` from the provided bytes and index and returns a
+/// string in the format `FamilyName-PostScriptName`.
+fn get_font_name(bytes: Arc<Vec<u8>>, font_index: u32) -> String {
+    let font = font_kit::font::Font::from_bytes(bytes, font_index)
+        .expect("Failed to create font from bytes.");
+
+    format!(
+        "{}-{}",
+        font.family_name(),
+        font.postscript_name()
+            .unwrap_or("Unknown PostScript".to_string())
+    )
 }
