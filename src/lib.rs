@@ -191,10 +191,14 @@ fn draw_contours_on_image(heightmap_image: &mut DynamicImage, heightmap: &Height
 
     let (bytes, font_index) = match font_handle {
         font_kit::handle::Handle::Path { path, font_index } => {
+            debug!("Loading font from path: {path:?}");
             let bytes = std::fs::read(path).expect("Failed to read font file.");
             (Arc::new(bytes), font_index)
         }
-        font_kit::handle::Handle::Memory { bytes, font_index } => (bytes, font_index),
+        font_kit::handle::Handle::Memory { bytes, font_index } => {
+            debug!("Loading font from memory.");
+            (bytes, font_index)
+        }
     };
 
     let bytes1 = bytes.clone();
