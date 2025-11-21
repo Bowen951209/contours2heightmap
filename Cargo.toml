@@ -20,6 +20,11 @@ exclude = [
 name = "c2h"
 path = "src/main.rs"
 
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+
 [dependencies]
 clap = { version = "4.0", features = ["derive"] }
 imageproc = "0.25.0"
